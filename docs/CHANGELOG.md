@@ -28,4 +28,4 @@
 - Sentry.
 
 **Waiting on Sadie**
-- Re-add the connector with the `signifii-demos` address, then delete the old `media-plan-connector` service.
+- Delete the old `media-plan-connector` service in Render (the connector already uses `signifii-demos`, confirmed 2 Nov).

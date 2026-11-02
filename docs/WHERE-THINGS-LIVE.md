@@ -10,6 +10,6 @@ Update this whenever anything is created or changed on Render, GitHub or Sentry.
 | Media Plan web plan link | `https://signifii-demos.onrender.com/p/<PLAN_LINK_TOKEN>` | |
 | Media Plan admin | `https://signifii-demos.onrender.com/admin/media-plan/sources` | `ADMIN_PASSWORD` |
 | Demo database | Render Postgres `signifii-demos-db` (`dpg-dbk9hg49v7es73c48id0-a`), Frankfurt, Basic 256 MB, Postgres 17 | Not used by code yet (saving, Wednesday). No outside access (empty IP allow list) |
-| Old spike service | Render `media-plan-connector` (`srv-dbk6p03bc2fs73ej4usg`), Frankfurt, Starter | https://media-plan-connector.onrender.com · **delete once the connector is re-added on `signifii-demos`** |
+| Old spike service | Render `media-plan-connector` (`srv-dbk6p03bc2fs73ej4usg`), Frankfurt, Starter | https://media-plan-connector.onrender.com · no longer used: the connector points at `signifii-demos` (confirmed 2 Nov). **Delete it** (Sadie) |
 | Sentry | Not set up yet | Needed for every service (server + browser) |
 | Microsoft app registration | Not created yet | Under `sadie@signifii.com`, Tuesday |
