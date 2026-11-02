@@ -2,3 +2,4 @@ node_modules/
 core/mcp/test-host/.host.bundle.js
 .env
 dist/
+.data/

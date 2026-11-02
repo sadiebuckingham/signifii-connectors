@@ -20,7 +20,7 @@ Target: a demo sent to an external person on **Friday 6 Nov 2026**, added to the
 | Shared core + `connectors/media-plan` layout | Done |
 | Source reader + reading reports (the five files) | Done, 29 tests |
 | Checks engine + the ten rule types, rules from `rules.xlsx` | Done; the spike plan's checks now run for real |
-| Plan engine (start plan, allocation, audience with 4–6 refusal) | Tuesday |
+| Plan engine (brief reading, allocation, audience with 4–6 refusal, compare, versions) | Done Tue; plans are kept on the server's disk, so they're lost on redeploy until Postgres (Wednesday) |
 | Save/open plans in client folder, Postgres folders, reset demo | Wednesday |
 | Microsoft sign-in + OneDrive, swap test | Thursday |
 | PDF via print-to-PDF from web link, final test | Friday |
@@ -43,11 +43,13 @@ Target: a demo sent to an external person on **Friday 6 Nov 2026**, added to the
 | `sample-data/media-plan/Media Plans/` | Demo folders: `Shared data/`, `Rules/rules.xlsx`, `Clients/Bramble Bots/{Briefs,Plans}` |
 
 ### Tools in Claude
-- `open_plan(brief_id)` – opens the spike plan (`bramble-bots-q4`, dummy numbers) with its sign-off checks run for real.
-- `list_sources(reread?)` – what's in Shared data and how each file was read.
+Shown as the plan view (card in chat, full plan fullscreen): `start_plan(client)`, `open_plan(plan or client)`, `set_allocation`, `move_budget`.
+Plain tools: `list_clients`, `list_sources`, `get_rates`, `get_audience(band)`, `add_channel`, `remove_channel`, `set_line_audiences`, `set_flighting`, `add_audience_figure`, `remove_audience_figure`, `set_target_bands`, `set_brief_detail`, `write_section`, `compare_options`, `check_plan`, `tick_warning`, `plan_versions`, `restore_version`, `get_plan_link`.
+
+Claude passes references only: channel names, rate and figure IDs, and the planner's own amounts or percentages. The engine (`connectors/media-plan/engine.js`) does the sums in whole pence, calculates shares and delivery from the rate card, refuses weeks outside the campaign window, refuses to split age bands, and checks written text (length, figures not in the plan, placeholders, claims about what children think or feel). Every change is saved as a version with a note, and the checks rerun.
 
 ### Web pages
-- `/p/<PLAN_LINK_TOKEN>` – read-only plan (same template).
+- `/p/<plan link token>` – read-only plan, one unguessable link per plan (`get_plan_link`).
 - `/admin/media-plan/sources` – reading reports (admin password; add `?reread=1` to re-read the folder).
 - `/admin/host-reports` – how Claude displayed the view on each device (admin password).
 

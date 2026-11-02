@@ -358,7 +358,8 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
       if (d.hidden) flags.push("hidden_row");
       if (col.hidden) flags.push("hidden_column");
       if (v.scale) flags.push("abbreviated");
-      const scopedNotes = tableNotes.filter((n) => noteApplies(n.scope, { row: d.r, column: col.label, group: col.group }));
+      // footnotes that explain a marker ("* Low sample") apply only to values carrying that marker
+      const scopedNotes = tableNotes.filter((n) => !/^\s*[*†‡#]/.test(n.text) && noteApplies(n.scope, { row: d.r, column: col.label, group: col.group }));
       const qualifiers = [];
       for (const n of [...notes, ...scopedNotes]) for (const q of n.qualifiers || qualifiersOf(n.text)) qualifiers.push({ key: q, text: n.text, ref: n.ref, scope: n.scope ? describeScope(n.scope) : "this row" });
 
@@ -369,6 +370,7 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
         reason: v.reason || null,
         needsReview: v.kind === "text" || flags.includes("ambiguous_date") || Boolean(rowDims.period[0]?.flags?.includes("ambiguous_date")),
         metric: metricLabel,
+        buyingUnit: rowDims.unit[0] && UNIT_APPLIES.test(col.name) ? rowDims.unit[0].text : null,
         unit: (rowDims.unit[0] && UNIT_APPLIES.test(col.name) ? rowDims.unit[0].text : null) || col.unit || unitIn(metricLabel) || (metricLabel === meta.metric ? meta.unit : null) || (v.kind === "duration" ? "seconds" : null),
         column: col.label,
         audience,

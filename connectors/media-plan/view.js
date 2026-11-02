@@ -6,6 +6,7 @@ startApp({
   name: "Little Lantern Media Plan",
   fullLabel: "Open full plan",
   reportTool: "report_host_context",
-  renderSummary: (d) => renderSummary(d.plan),
-  renderFull: (d) => renderPlan(d.plan),
+  renderSummary: (d) => renderSummary(d.vm),
+  renderFull: (d) => renderPlan(d.vm),
+  refresh: (d) => (d?.planId ? { name: "get_plan_view", arguments: { plan_id: d.planId } } : null),
 });

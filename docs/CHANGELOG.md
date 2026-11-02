@@ -1,5 +1,20 @@
 # Changelog
 
+## Tue 3 Nov 2026 (started Mon evening)
+
+**Changed**
+- Plan engine. A plan starts from the client's brief: budget, campaign window, approval date, client, campaign, objective, audience and contact are read from the PDF by pattern, each with page and line. Anything unclear is asked for, never guessed.
+- New shared document reader (PDF, Word, PowerPoint) and pattern extractors in `core/sources`.
+- Fictional brief added: `Clients/Bramble Bots/Briefs/Bramble Bots - Q4 Christmas 2026 media brief.pdf`.
+- Tools to build a plan in Claude (see RUNBOOK). Money in whole pence; shares and delivery calculated; "move 10%" asks what the 10% is of; weeks outside the window refused; hidden rates need the planner's say-so; 4-6 refused clearly where sources only have 4-9; wider bands only with the planner's agreement and labelled with their real band.
+- Written text is refused if too long, if it has a figure or date or age band that isn't in the plan, a placeholder, or a claim about what children think or feel.
+- Built-in checks on every plan: all sections filled in, figures in text match the plan, no placeholders. Ticks lapse if a warning's wording changes.
+- Compare options side by side (nothing changed). Versions with notes; restore.
+- One unguessable web link per plan. The spike plan is gone.
+- 48 tests.
+
+**Known gap**: plans are saved on the server's disk until Wednesday's Postgres work, so a redeploy clears them.
+
 ## Mon 2 Nov 2026 (later)
 
 **Changed** (reader, general rules; nothing file-specific)

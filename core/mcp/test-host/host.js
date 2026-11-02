@@ -8,7 +8,7 @@ window.log = [];
 const client = new Client({ name: "test-host", version: "0" });
 await client.connect(new StreamableHTTPClientTransport(new URL("/mcp", location.origin)));
 const { tools } = await client.listTools();
-const tool = tools.find((t) => t.name === "open_plan");
+const tool = tools.find((t) => t.name === "start_plan");
 const uri = tool._meta.ui.resourceUri;
 const res = await client.readResource({ uri });
 const html = res.contents[0].text;
@@ -33,9 +33,9 @@ bridge.onrequestdisplaymode = async ({ mode }) => {
 };
 bridge.oninitialized = async () => {
   window.log.push("initialized");
-  const args = { brief_id: "bramble-bots-q4" };
+  const args = { client: "Bramble Bots" };
   bridge.sendToolInput({ arguments: args });
-  const result = await client.callTool({ name: "open_plan", arguments: args });
+  const result = await client.callTool({ name: "start_plan", arguments: args });
   bridge.sendToolResult(result);
   window.ready = true;
 };

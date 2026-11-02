@@ -24,13 +24,14 @@ body { font-family: var(--body); color: var(--color-text-primary, #141413); back
 
 /* ---------- Slides ---------- */
 .deck { display: grid; gap: 16px; container-type: inline-size; }
-.slide { background: var(--paper); color: var(--ink); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+.slide { background: var(--paper); color: var(--ink); border-radius: 12px; display: flex; flex-direction: column;
   border: 1px solid var(--line); }
-@container (min-width: 640px) { .slide { aspect-ratio: 16 / 9; } }
+/* 16:9 at wide widths; a slide with more content grows rather than clipping it */
+@container (min-width: 640px) { .slide { aspect-ratio: 16 / 9; min-height: fit-content; } }
 .slide-head { display: flex; align-items: center; gap: 10px; padding: 18px 24px 8px; }
 .slide-head h2 { font: 800 22px/1.2 var(--head); margin: 0; flex: 1; }
 .slide-no { width: 28px; height: 28px; border-radius: 50%; background: var(--yellow); color: var(--navy); display: grid; place-items: center; font: 800 14px var(--head); flex: none; }
-.slide-body { padding: 8px 24px 12px; flex: 1; overflow: hidden; font-size: 14px; line-height: 1.45; }
+.slide-body { padding: 8px 24px 12px; flex: 1; font-size: 14px; line-height: 1.45; min-width: 0; }
 .slide-foot { display: flex; align-items: center; gap: 8px; padding: 8px 24px; border-top: 1px solid var(--line); font: 600 12px var(--head); color: var(--muted); }
 .slide-foot .fict { margin-left: auto; }
 .logo { width: 18px; height: 18px; flex: none; }
@@ -76,6 +77,10 @@ body { font-family: var(--body); color: var(--color-text-primary, #141413); back
 .checks-sum { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
 .signoff { margin-top: 14px; font-size: 13px; color: var(--muted); }
 
-/* Wide table scroll on very narrow screens, no page-level horizontal scroll */
-.slide-body { overflow-x: auto; }
+/* Wide tables scroll inside their own box; the page never scrolls sideways */
+.tw { overflow-x: auto; }
+.gaps { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.unalloc td { color: var(--fail); font-weight: 700; border-top: 0; }
+.summary-missing { margin: 10px 0 0; font-size: 13px; color: var(--yellow); }
+.kpis small { font-weight: 600; opacity: .8; }
 .brief dd.num { text-align: left; }

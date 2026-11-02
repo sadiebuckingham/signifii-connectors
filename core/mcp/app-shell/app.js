@@ -14,6 +14,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
  * @param {(data:any)=>string} o.renderFull     fullscreen HTML
  * @param {string} o.fullLabel                  button text, e.g. "Open full plan"
  * @param {string} [o.reportTool]               app-only tool that receives host diagnostics
+ * @param {(data:any)=>{name:string,arguments:object}|null} [o.refresh]  tool call that returns fresh data
  */
 export async function startApp(o) {
   const root = document.getElementById("root");
@@ -47,7 +48,18 @@ export async function startApp(o) {
     try { await app.callServerTool({ name: o.reportTool, arguments: { reason, report: JSON.stringify(diagnostics()) } }); } catch { /* diagnostics are best-effort */ }
   }
 
+  async function refresh() {
+    const call = o.refresh?.(data);
+    if (!call) return;
+    try {
+      const r = await app.callServerTool(call);
+      if (!r?.isError && r?.structuredContent) { data = r.structuredContent; events.push("refreshed"); }
+    } catch (e) { events.push("refresh failed: " + (e?.message || e)); }
+    render();
+  }
+
   async function setMode(m) {
+    if (m === "fullscreen") refresh();
     try { const r = await app.requestDisplayMode({ mode: m }); events.push(`requestDisplayMode(${m}) -> ${JSON.stringify(r)}`); }
     catch (e) { events.push(`requestDisplayMode(${m}) threw: ${e?.message || e}`); }
     render(); report(`after ${m} request`);
@@ -61,6 +73,7 @@ export async function startApp(o) {
       <span class="meta">${m === "fullscreen" ? "" : ""}</span>
       <span class="bar-actions">
         ${showDiag ? '<button class="btn" id="diag">Hide diagnostics</button>' : ""}
+        ${o.refresh ? '<button class="btn" id="refresh" title="Show the latest version">Refresh</button>' : ""}
         ${m === "fullscreen" ? '<button class="btn" id="mode-inline">Back to chat</button>' : `<button class="btn primary" id="mode-full">${esc(o.fullLabel)}</button>`}
       </span></div>`;
     const diag = showDiag ? `<pre class="diag">${esc(JSON.stringify(diagnostics(), null, 2))}</pre>` : "";
@@ -68,6 +81,7 @@ export async function startApp(o) {
     root.style.padding = m === "fullscreen" ? `${s.top}px ${s.right}px ${s.bottom}px ${s.left}px` : "";
     root.querySelector("#mode-full")?.addEventListener("click", () => setMode("fullscreen"));
     root.querySelector("#mode-inline")?.addEventListener("click", () => setMode("inline"));
+    root.querySelector("#refresh")?.addEventListener("click", refresh);
     root.querySelector("#diag")?.addEventListener("click", () => { showDiag = false; render(); });
   }
   const safe = () => ctx().safeAreaInsets || { top: 0, right: 0, bottom: 0, left: 0 };

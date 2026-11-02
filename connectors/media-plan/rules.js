@@ -108,7 +108,7 @@ export const evaluators = {
     if (plan.lines.every((l) => !l.weeks)) return notRun("No flighting set yet.");
     const reaches = (l) => l.audiences.some((a) => same(a.type, rule.appliesTo) || same(a.label, rule.appliesTo));
     const gaps = plan.weeks.filter((w) => !plan.lines.some((l) => reaches(l) && (l.weeks || []).includes(w)));
-    return gaps.length ? problem(`No live line reaches ${rule.appliesTo} in w/c ${gaps.join(", ")}.`) : pass(`${rule.appliesTo} reached in all ${plan.weeks.length} weeks.`);
+    return gaps.length ? problem(`No live line reaches "${rule.appliesTo}" in w/c ${gaps.join(", ")}.`) : pass(`"${rule.appliesTo}" reached in all ${plan.weeks.length} weeks.`);
   },
 
   allowed_channels(rule, plan) {
@@ -184,3 +184,46 @@ function weeksFromLimit(limit, weeks) {
   return dates.length ? dates : null;
 }
 const describeWeeks = (ws) => (ws.length === 1 ? `w/c ${ws[0]}` : `w/c ${ws[0]} to ${ws[ws.length - 1]}`);
+
+// ---------- built-in checks (always on; not from the rules sheet)
+// From the original brief: written text may only contain figures that are in the
+// plan, and no [placeholders] anywhere; plus every section of the template filled in.
+import { unsourcedNumbers, hasPlaceholder } from "../../core/checks/text.js";
+
+export const BUILT_IN_RULES = [
+  { id: "B1", type: "sections_complete", description: "Every section of the plan is filled in", severity: "fail", on: true, source: { file: "built-in" } },
+  { id: "B2", type: "text_numbers", description: "Figures in written text match figures in the plan", severity: "fail", on: true, source: { file: "built-in" } },
+  { id: "B3", type: "no_placeholders", description: "No [placeholders] left anywhere", severity: "fail", on: true, source: { file: "built-in" } },
+];
+
+const writtenTexts = (plan) => [
+  ...(plan.sections?.objective ? [["Objective", plan.sections.objective.text]] : []),
+  ...Object.entries(plan.sections?.rationale || {}).map(([id, r]) => [`Rationale for ${plan.lines.find((l) => l.id === id)?.channel || id}`, r.text]),
+];
+
+Object.assign(evaluators, {
+  sections_complete(rule, m) {
+    const plan = m._plan; if (!plan) return notRun("No plan.");
+    const missing = [];
+    if (!m.budget) missing.push("budget"); if (!m.window) missing.push("campaign window");
+    if (!plan.sections?.objective) missing.push("objective");
+    if (!plan.lines.length) missing.push("channels");
+    for (const l of plan.lines) if (!plan.sections?.rationale?.[l.id]) missing.push(`rationale for ${l.channel}`);
+    for (const l of plan.lines) if (!l.weeks) missing.push(`flighting for ${l.channel}`);
+    if (!plan.figures.length) missing.push("audience figures");
+    return missing.length ? problem(`Not filled in yet: ${missing.join(", ")}.`) : pass("Every section is filled in.");
+  },
+  text_numbers(rule, m) {
+    const plan = m._plan; if (!plan) return notRun("No plan.");
+    const texts = writtenTexts(plan);
+    if (!texts.length) return notRun("No written text in the plan yet.");
+    const bad = texts.flatMap(([where, t]) => unsourcedNumbers(t, m._derived.allowedNumbers).map((n) => `${where}: "${n.raw}"`));
+    return bad.length ? problem(`Unsourced figure: ${bad.join("; ")}.`) : pass(`All figures in ${texts.length} written section(s) match the plan.`);
+  },
+  no_placeholders(rule, m) {
+    const plan = m._plan; if (!plan) return notRun("No plan.");
+    const all = [...writtenTexts(plan), ...plan.lines.map((l) => ["Channel name", l.channel])];
+    const bad = all.filter(([, t]) => hasPlaceholder(t)).map(([w]) => w);
+    return bad.length ? problem(`Placeholder found in: ${bad.join(", ")}.`) : pass("No placeholders.");
+  },
+});
