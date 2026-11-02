@@ -12,7 +12,9 @@ const SHELL_CSS = readFileSync(path.join(ROOT, "core/mcp/app-shell/shell.css"), 
 export async function buildView(name) {
   const dir = path.join(ROOT, "connectors", name);
   const cfg = JSON.parse(readFileSync(path.join(dir, "view.json"), "utf8"));
-  const js = await build({ entryPoints: [path.join(dir, "view.js")], bundle: true, format: "esm", target: "es2022", minify: true, write: false, platform: "browser" });
+  const js = await build({ entryPoints: [path.join(dir, "view.js")], bundle: true, format: "esm", target: "es2022", minify: true, write: false, platform: "browser",
+    // Sentry DSN (not a secret: it only allows sending error reports) baked in at build time
+    define: { __SENTRY_DSN__: JSON.stringify(process.env.SENTRY_DSN || ""), __RELEASE__: JSON.stringify(process.env.RENDER_GIT_COMMIT || "") } });
   const css = SHELL_CSS + "\n" + cfg.css.map((f) => readFileSync(path.join(dir, f), "utf8")).join("\n");
   const script = js.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
   const fonts = (cfg.fontsCss || []).map((u) => `<link rel="stylesheet" href="${u}">`).join("");

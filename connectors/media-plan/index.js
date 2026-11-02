@@ -8,6 +8,7 @@ import { SourceLibrary } from "../../core/sources/library.js";
 import { readingReportsPage } from "../../core/sources/report-html.js";
 import { FileDocStore } from "../../core/versions/doc-store.js";
 import { PlanError } from "./engine.js";
+import { reportError } from "../../core/observability/sentry.js";
 import { createService } from "./service.js";
 import { config } from "./config.js";
 import { renderPlan } from "./template/plan.js";
@@ -42,10 +43,13 @@ const view = (r) => ({ vm: { ...r.vm, checkRun: r.checkRun && { ...r.checkRun, r
 const ok = (r, withView = true) => ({ content: [{ type: "text", text: planText(r) }], ...(withView ? { structuredContent: view(r) } : { structuredContent: { planId: r.plan.id, version: r.plan.version, checks: r.checkRun.summary } }) });
 const err = (e) => {
   if (e instanceof PlanError) return { isError: true, content: [{ type: "text", text: e.message }] };
-  console.error(e);
+  reportError(e, { where: "media-plan tool" });
   return { isError: true, content: [{ type: "text", text: `Something went wrong on the server: ${e.message}` }] };
 };
 const guard = (fn) => async (args) => { try { return await fn(args); } catch (e) { return err(e); } };
+
+// The view may send error reports to Sentry (and nowhere else).
+function sentryOrigin() { try { return process.env.SENTRY_DSN ? [new URL(process.env.SENTRY_DSN).origin] : []; } catch { return []; } }
 
 const DESC_SUFFIX = " Never pass figures you read yourself: pass references (IDs, channel names) and the planner's own percentages or amounts.";
 
@@ -54,7 +58,7 @@ export default {
   title: "Little Lantern Media Plans",
   version: "0.3.0",
   legacyPaths: ["/mcp"],
-  view: { uri: "ui://media-plan/plan-v3.html", csp: { resourceDomains: ["https://fonts.googleapis.com", "https://fonts.gstatic.com"] } },
+  view: { uri: "ui://media-plan/plan-v3.html", csp: { resourceDomains: ["https://fonts.googleapis.com", "https://fonts.gstatic.com"], connectDomains: sentryOrigin() } },
 
   tools(reg) {
     const { z } = reg;

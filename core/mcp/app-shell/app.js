@@ -4,6 +4,11 @@
 // A connector supplies only its render functions.
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
 import { wireSourceMarkers } from "./markers.js";
+import * as Sentry from "@sentry/browser";
+
+// Browser error reporting: only when a DSN was set at build time. No personal data.
+const SENTRY_DSN = typeof __SENTRY_DSN__ !== "undefined" ? __SENTRY_DSN__ : "";
+if (SENTRY_DSN) Sentry.init({ dsn: SENTRY_DSN, release: typeof __RELEASE__ !== "undefined" ? __RELEASE__ || undefined : undefined, environment: "demo", sendDefaultPii: false, tracesSampleRate: 0, integrations: (d) => d.filter((i) => i.name !== "Breadcrumbs") });
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 

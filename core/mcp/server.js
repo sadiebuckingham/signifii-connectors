@@ -11,6 +11,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
 import { checkConnectorAuth, checkAdmin } from "../auth/index.js";
+import { reportError, attachErrorHandler } from "../observability/sentry.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -67,7 +68,7 @@ export function createApp(connectors) {
         await server.connect(transport);
         await transport.handleRequest(req, res, req.body);
       } catch (e) {
-        console.error(`[${c.name}] MCP error`, e);
+        reportError(e, { connector: c.name, where: "mcp" });
         if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null });
       }
     };
@@ -84,5 +85,6 @@ export function createApp(connectors) {
   }
 
   app.get("/admin/host-reports", checkAdmin, (_req, res) => res.json(hostReports));
+  attachErrorHandler(app);
   return { app, ctx };
 }

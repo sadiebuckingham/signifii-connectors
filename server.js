@@ -1,5 +1,6 @@
 // Entry point. CONNECTOR chooses which connectors this service runs
 // (comma-separated, e.g. "media-plan" or "media-plan,canva-guides"). Default: media-plan.
+import "./core/observability/sentry.js"; // first, so errors anywhere are reported
 import { createApp } from "./core/mcp/server.js";
 
 const names = (process.env.CONNECTOR || "media-plan").split(",").map((s) => s.trim()).filter(Boolean);
