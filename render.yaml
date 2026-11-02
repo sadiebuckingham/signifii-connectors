@@ -1,7 +1,8 @@
-# Render Blueprint (Frankfurt). Postgres and Sentry are added in build step 2.
+# Render Blueprint for reference (services were created through the Render API, so this file isn't linked).
+# Demos run together on one service; real clients each get their own service + database from this repo.
 services:
   - type: web
-    name: media-plan-connector
+    name: signifii-demos
     runtime: node
     region: frankfurt
     plan: starter
@@ -11,11 +12,17 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: CONNECTOR_TOKEN     # shared secret for the connector (demo auth)
-        generateValue: true
-      - key: PLAN_LINK_TOKEN     # unguessable token for the /p/<token> web view
-        generateValue: true
+      - key: CONNECTOR
+        value: media-plan
+      - key: CONNECTOR_TOKEN
+        sync: false
+      - key: PLAN_LINK_TOKEN
+        sync: false
       - key: ADMIN_PASSWORD
         sync: false
-      - key: PUBLIC_URL          # e.g. https://media-plan-connector.onrender.com
-        sync: false
+      - key: PUBLIC_URL
+        value: https://signifii-demos.onrender.com
+databases:
+  - name: signifii-demos-db
+    region: frankfurt
+    plan: basic-256mb
