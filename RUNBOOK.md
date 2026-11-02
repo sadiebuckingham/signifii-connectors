@@ -2,7 +2,16 @@
 
 **FICTIONAL DEMO DATA ONLY.** Little Lantern Media and Bramble Bots are invented.
 
-Status: **build step 1 (spike) done locally, not yet deployed.** Nothing beyond the spike has been built, as the brief says.
+Status: **build step 1 (spike) deployed.** Nothing beyond the spike has been built, as the brief says.
+
+| | |
+|---|---|
+| GitHub | `sadiebuckingham/media-plan-connector` (private), branch `main`, auto-deploys on push |
+| Render | Web service `media-plan-connector` (`srv-dbk6p03bc2fs73ej4usg`), Frankfurt, Starter plan, workspace "My Workspace" |
+| URL | https://media-plan-connector.onrender.com (`/healthz` for a health check) |
+| Secrets | `CONNECTOR_TOKEN`, `PLAN_LINK_TOKEN`, `ADMIN_PASSWORD` are set in Render → service → Environment. Never commit them |
+
+Created through the Render API rather than the Blueprint, so `render.yaml` describes the same settings but isn't linked. To-do in the dashboard: set **Health Check Path** to `/healthz` (Settings).
 
 ---
 
