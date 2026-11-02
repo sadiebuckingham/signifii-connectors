@@ -1,0 +1,21 @@
+# Render Blueprint (Frankfurt). Postgres and Sentry are added in build step 2.
+services:
+  - type: web
+    name: media-plan-connector
+    runtime: node
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CONNECTOR_TOKEN     # shared secret for the connector (demo auth)
+        generateValue: true
+      - key: PLAN_LINK_TOKEN     # unguessable token for the /p/<token> web view
+        generateValue: true
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PUBLIC_URL          # e.g. https://media-plan-connector.onrender.com
+        sync: false

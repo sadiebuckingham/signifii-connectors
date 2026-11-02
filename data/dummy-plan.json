@@ -1,0 +1,203 @@
+{
+  "_label": "FICTIONAL DEMO DATA - SPIKE DUMMY PLAN. Numbers are placeholders typed by hand for the display test only; they do not come from any source file.",
+  "plan_id": "spike-bramble-bots-q4",
+  "brief_id": "bramble-bots-q4",
+  "version": "v0.1 (spike)",
+  "status": "DRAFT",
+  "agency": "Little Lantern Media",
+  "client": "Bramble Bots",
+  "campaign": "Q4 Christmas 2026",
+  "window": {
+    "start": "2026-11-09",
+    "end": "2026-12-20"
+  },
+  "budget_gbp": 150000,
+  "objective": "Drive awareness and wish-list intent for the Bramble Bots range among UK families ahead of Christmas.",
+  "audience": "Kids 4-9 and their parents",
+  "reach": {
+    "columns": [
+      "4-6",
+      "7-9",
+      "4-9"
+    ],
+    "rows": [
+      {
+        "channel": "Kids' TV",
+        "values": [
+          null,
+          null,
+          "1,240k"
+        ],
+        "src": "spike dummy"
+      },
+      {
+        "channel": "YouTube",
+        "values": [
+          "410k",
+          "520k",
+          null
+        ],
+        "src": "spike dummy"
+      },
+      {
+        "channel": "Social (parents)",
+        "values": [
+          null,
+          null,
+          null
+        ],
+        "note": "Parents audience, not an age band",
+        "src": "spike dummy"
+      }
+    ],
+    "note": "Blank = the source does not report this band. Bands are never split or estimated."
+  },
+  "mix": [
+    {
+      "channel": "Kids' TV",
+      "budget_gbp": 60000,
+      "impressions": "4.1m",
+      "src": "spike dummy"
+    },
+    {
+      "channel": "YouTube",
+      "budget_gbp": 37500,
+      "impressions": "3.0m",
+      "src": "spike dummy"
+    },
+    {
+      "channel": "Social (parents)",
+      "budget_gbp": 22500,
+      "impressions": "2.2m",
+      "src": "spike dummy"
+    },
+    {
+      "channel": "Kids' print",
+      "budget_gbp": 15000,
+      "impressions": "0.4m",
+      "src": "spike dummy"
+    },
+    {
+      "channel": "Cinema",
+      "budget_gbp": 15000,
+      "impressions": "0.3m",
+      "src": "spike dummy"
+    }
+  ],
+  "flighting": {
+    "weeks": [
+      "9 Nov",
+      "16 Nov",
+      "23 Nov",
+      "30 Nov",
+      "7 Dec",
+      "14 Dec"
+    ],
+    "rows": [
+      {
+        "channel": "Kids' TV",
+        "on": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          0
+        ]
+      },
+      {
+        "channel": "YouTube",
+        "on": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "channel": "Social (parents)",
+        "on": [
+          0,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      },
+      {
+        "channel": "Kids' print",
+        "on": [
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "channel": "Cinema",
+        "on": [
+          0,
+          0,
+          1,
+          1,
+          1,
+          0
+        ]
+      }
+    ]
+  },
+  "rationale": [
+    {
+      "channel": "Kids' TV",
+      "text": "Broad family reach in the weeks when Christmas lists are written."
+    },
+    {
+      "channel": "YouTube",
+      "text": "Always-on presence where 4-9s watch toy and play content. Targeting is contextual only."
+    },
+    {
+      "channel": "Social (parents)",
+      "text": "Reaches the parents who buy, closer to the purchase window."
+    },
+    {
+      "channel": "Kids' print",
+      "text": "Early-season pages in kids' magazines to seed the range."
+    },
+    {
+      "channel": "Cinema",
+      "text": "Family films over the Christmas holiday weeks."
+    }
+  ],
+  "checks": [
+    {
+      "status": "pass",
+      "text": "Channel budgets add up exactly to the brief budget"
+    },
+    {
+      "status": "pass",
+      "text": "All flighting inside the campaign window"
+    },
+    {
+      "status": "warn",
+      "text": "YouTube line reaches under-13s: targeting review needed",
+      "needs_tick": true
+    },
+    {
+      "status": "fail",
+      "text": "Spike plan: numbers are dummy, not sourced"
+    }
+  ],
+  "signoff": {
+    "director": null,
+    "date": null
+  },
+  "next_steps": {
+    "approval_by": "2026-11-06",
+    "contact": "Jo, Head of Planning"
+  }
+}
