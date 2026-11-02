@@ -11,6 +11,8 @@
 - Built-in checks on every plan: all sections filled in, figures in text match the plan, no placeholders. Ticks lapse if a warning's wording changes.
 - Compare options side by side (nothing changed). Versions with notes; restore.
 - One unguessable web link per plan. The spike plan is gone.
+- Sentry on (server and in-Claude view), project `signifii-demos` in the EU region.
+- Microsoft sign-in setup steps for Sadie: `docs/microsoft-sign-in-setup.md`.
 - 48 tests.
 
 **Known gap**: plans are saved on the server's disk until Wednesday's Postgres work, so a redeploy clears them.
