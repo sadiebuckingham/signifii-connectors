@@ -10,6 +10,7 @@
 import { at, rowCells, ref } from "./grid.js";
 import { normaliseValue, resolveDateOrder, applyDateOrder, parseDateText, isNumericKind } from "./values.js";
 import { parseAudience, hasAudienceMeaning } from "./audience.js";
+import { qualifiersOf, noteScope, noteApplies, describeScope, isBoilerplate } from "./notes.js";
 
 const TOTAL_RE = /^\s*(sub[- ]?total|grand total|total|sum|overall)\b/i;
 const NOTE_LEAD_RE = /^\s*(\*|†|‡|note|notes|source|nb|n\.b\.|\d+\.\s|caveat|updated|figures?:)/i;
@@ -90,7 +91,7 @@ function dimRole(header, values) {
 
 // Pull dates, units, metric names and source lines out of title/notes text.
 export function readPreamble(lines) {
-  const meta = { title: null, lines: [], period: null, unit: null, metric: null, source: null, fictional: false, dateTexts: [] };
+  const meta = { title: null, lines: [], period: null, unit: null, metric: null, source: null, fictional: false, dateTexts: [], spans: [] };
   for (const { text, ref: cref } of lines) {
     meta.lines.push({ text, ref: cref });
     if (!meta.title) meta.title = text;
@@ -103,8 +104,13 @@ export function readPreamble(lines) {
     }
     const src = text.match(/^\s*source\s*:\s*(.+)$/i);
     if (src) meta.source = src[1].trim();
-    const dates = [...text.matchAll(/\b(\d{1,2}[/.]\d{1,2}[/.]\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{4})\b/g)].map((m) => m[1]);
+    const dates = [...text.matchAll(/(?<![\d.])(\d{1,2}[/.]\d{1,2}[/.]\d{4}|\d{4}[-./]\d{2}[-./]\d{2}|\d{1,2}\s+[A-Za-z]{3,9}\.?\s+\d{4}|\d{1,2}[/.]\d{1,2}[/.]\d{2})(?![\d.])/g)].map((m) => m[1]);
     for (const d of dates) meta.dateTexts.push({ text: d, ref: cref });
+    // whole quarters or months named in a title ("Q4 2026", "October 2026") when no exact dates are given
+    const q = text.match(/\bQ([1-4])\s*['’]?\s*(20\d{2}|\d{2})\b/i);
+    if (q) meta.spans.push({ kind: "quarter", q: Number(q[1]), y: Number(q[2].length === 2 ? "20" + q[2] : q[2]), text: q[0], ref: cref });
+    const mo = text.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+(20\d{2})\b/i);
+    if (mo && !/\d\s+$/.test(text.slice(0, mo.index))) meta.spans.push({ kind: "month", m: MONTH_NO[mo[1].slice(0, 3).toLowerCase()], y: Number(mo[2]), text: mo[0], ref: cref });
   }
   return meta;
 }
@@ -113,7 +119,14 @@ export function resolvePeriod(meta, fileDateOrder) {
   const parsed = meta.dateTexts.map((d) => ({ ...d, v: parseDateText(d.text) })).filter((d) => d.v);
   const order = resolveDateOrder(parsed.filter((d) => d.v.parts).map((d) => d.v.parts)) || fileDateOrder;
   const dates = parsed.map((d) => ({ ...d, v: applyDateOrder(d.v, order) }));
-  if (!dates.length) return null;
+  if (!dates.length) {
+    const sp = meta.spans[0];
+    if (!sp) return null;
+    const pad = (n) => String(n).padStart(2, "0");
+    const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const [m1, m2] = sp.kind === "quarter" ? [sp.q * 3 - 2, sp.q * 3] : [sp.m, sp.m];
+    return { from: `${sp.y}-${pad(m1)}-01`, to: `${sp.y}-${pad(m2)}-${lastDay(sp.y, m2)}`, original: sp.text, ref: sp.ref, ambiguous: false, basis: sp.kind === "quarter" ? "quarter named in the title" : "month named in the title" };
+  }
   const ok = dates.filter((d) => d.v.value);
   const amb = dates.filter((d) => !d.v.value);
   return {
@@ -123,6 +136,7 @@ export function resolvePeriod(meta, fileDateOrder) {
   };
 }
 
+const MONTH_NO = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 const PERCENT_HEADER = /%|\bper ?cent/i;
 // A "buying unit" column (CPT, CPM, per insertion) describes price columns only.
 const UNIT_APPLIES = /\b(rate|price|cost|cpm|cpt|cpp)\b/i;
@@ -142,7 +156,7 @@ export function readSheet(g, file, opts = {}) {
     if (isBlank(g, r)) { r++; continue; }
     if (!looksLikeHeader(g, r)) {
       const cells = rowCells(g, r);
-      if (cells.length === 2 && normaliseValue(cells[0].raw, cells[0].text).kind === "text") {
+      if (looksLikePair(cells)) {
         // start of a label/value list
         const kv = readKeyValue(g, r, file, preambleLines, issues);
         if (kv) { tables.push(kv.table); r = kv.next; preambleLines = []; continue; }
@@ -220,7 +234,7 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
     if (isBlank(g, next)) { next++; continue; }
     if (looksLikeHeader(g, next)) break;
     const cells = rowCells(g, next);
-    if (cells.length === 2 && normaliseValue(cells[0].raw, cells[0].text).kind === "text" && normaliseValue(cells[1].raw, cells[1].text).kind !== "text") break; // a label/value list
+    if (looksLikePair(cells) && normaliseValue(cells[1].raw, cells[1].text).kind !== "text") break; // a label/value list
     if (cells.length >= 3) break;
     noteRows.push({ text: cells.map((x) => String(x.raw)).join("  "), ref: cells[0].ref });
     next++;
@@ -264,8 +278,14 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
       : `Dates in "${col.label}" are ambiguous (could be UK or US order). Flagged, not guessed.`);
   }
 
-  // ---- notes: footnote markers, "do not sum", conditional notes
-  const tableNotes = [...noteRows];
+  // ---- notes: lines above the table (except the title) and below it, each with a scope
+  const aboveNotes = meta.lines.slice(1).map((l) => ({ ...l, where: "above" }));
+  const tableNotes = [...aboveNotes, ...noteRows.map((n) => ({ ...n, where: "below" }))].filter((n) => !isBoilerplate(n.text));
+  for (const n of tableNotes) {
+    n.scope = noteScope(n.text, columns);
+    n.qualifiers = qualifiersOf(n.text);
+    if (n.scope.kind !== "table") decisions.push(`Note "${n.text}" applied to ${describeScope(n.scope)}`);
+  }
   const markerNotes = new Map();
   for (const n of tableNotes) {
     const m = n.text.match(/^\s*([*†‡#]+)\s*(.+)$/);
@@ -289,6 +309,8 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
     (columns.filter((c) => c.role === "measure").every((c) => hasAudienceMeaning(parseAudience(c.label)))
       ? columns.find((c) => c.role === "attribute" && c.c === span.left) : null);
   if (metricCol && metricCol.role !== "metric") { metricCol.role = "metric"; decisions.push(`Table is transposed: metrics are in rows ("${metricCol.name}"), audiences are in the columns`); }
+
+  const tableRange = `${ref(group ? group.row : headerRow, span.left)}:${ref(Math.max(headerRow, ...dataRows.map((d) => d.r)), span.right)}`;
 
   // ---- values
   const values = [];
@@ -335,6 +357,10 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
       if (v.kind === "text") issues.push({ level: "warn", ref: x.ref, text: `"${x.text}" in a number column ("${col.label}") can't be read as a number. Marked needs review.` });
       if (d.hidden) flags.push("hidden_row");
       if (col.hidden) flags.push("hidden_column");
+      if (v.scale) flags.push("abbreviated");
+      const scopedNotes = tableNotes.filter((n) => noteApplies(n.scope, { row: d.r, column: col.label, group: col.group }));
+      const qualifiers = [];
+      for (const n of [...notes, ...scopedNotes]) for (const q of n.qualifiers || qualifiersOf(n.text)) qualifiers.push({ key: q, text: n.text, ref: n.ref, scope: n.scope ? describeScope(n.scope) : "this row" });
 
       values.push({
         file, sheet: g.sheet, ref: x.ref, hidden: Boolean(d.hidden || col.hidden),
@@ -352,10 +378,14 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
         period: rowDims.period[0] ? (rowDims.period[0].value || (rowDims.period[0].flags?.includes("ambiguous_date") ? null : rowDims.period[0].text)) : (d.group?.text || null),
         tablePeriod: null, // filled below
         flags, notes,
-        tableNotes: tableNotes.filter((n) => !/fictional demo data/i.test(n.text) && !/^notes?:?$/i.test(n.text.trim())).map((n) => n.text),
+        tableNotes: scopedNotes.map((n) => n.text),
+        qualifiers,
+        table: tableRange,
       });
     }
   }
+
+  harmoniseMoney(values, decisions);
 
   const period = resolvePeriod(meta, opts.fileDateOrder);
   for (const v of values) v.tablePeriod = period;
@@ -367,7 +397,7 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
   return {
     next,
     table: {
-      range: `${ref(group ? group.row : headerRow, span.left)}:${ref(Math.max(headerRow, ...dataRows.map((d) => d.r)), span.right)}`,
+      range: tableRange, columnPeriod: columnPeriodOf(values),
       headerRow, groupRow: group?.row || null,
       title: meta.title, period, unit: meta.unit, metric: meta.metric, source: meta.source,
       columns: columns.map(({ c, label, role, hidden, ref: cref, percent }) => ({ label, role, hidden, ref: cref, percent: Boolean(percent) })),
@@ -375,6 +405,29 @@ function readTable(g, headerRow, file, preambleLines, issues, skipped, opts) {
       notes: tableNotes, preamble: meta.lines, decisions, values,
     },
   };
+}
+
+// One column with money written several ways ("£10,000", "10000", "£5k"):
+// if a column holds money in one currency and otherwise only plain numbers,
+// read the plain numbers as that currency too, and flag each one.
+function harmoniseMoney(values, decisions) {
+  const byCol = new Map();
+  for (const v of values) { const a = byCol.get(v.column) || []; a.push(v); byCol.set(v.column, a); }
+  for (const [col, vs] of byCol) {
+    const money = vs.filter((v) => v.kind === "currency" || (v.kind === "range" && v.currency));
+    const plain = vs.filter((v) => v.kind === "number");
+    const currencies = new Set(money.map((v) => v.currency).filter(Boolean));
+    if (!money.length || !plain.length || currencies.size !== 1 || vs.some((v) => v.kind === "percent")) continue;
+    const cur = [...currencies][0];
+    for (const v of plain) { v.kind = "currency"; v.currency = cur; v.flags.push("currency_from_column"); }
+    const forms = [...new Set(vs.filter((v) => v.kind === "currency").map((v) => v.original))].slice(0, 4).map((o) => `"${o}"`).join(", ");
+    decisions.push(`"${col}" writes money in different ways (${forms}). All read as ${cur}; the ${plain.length} figure(s) without a currency sign are flagged.`);
+  }
+}
+
+function columnPeriodOf(values) {
+  const ds = values.map((v) => v.period).filter((p) => /^\d{4}-\d{2}-\d{2}$/.test(p || "")).sort();
+  return ds.length ? { from: ds[0], to: ds[ds.length - 1] } : null;
 }
 
 function mergeAudience(labels) {
@@ -394,29 +447,47 @@ function mergeAudience(labels) {
   return out;
 }
 
-// Label/value lists with no header row: "Subscribers | 38,500"
+// A label/value pair: a text label, then a value, then optionally a note.
+function looksLikePair(cells) {
+  if (cells.length < 2 || cells.length > 3) return false;
+  if (cells[1].c !== cells[0].c + 1 && cells[1].c !== cells[0].c + 2) return false;
+  return normaliseValue(cells[0].raw, cells[0].text).kind === "text";
+}
+
+// Label/value lists with no header row: "Subscribers | 38,500 | as of Oct"
 function readKeyValue(g, r0, file, preambleLines, issues) {
   const meta = readPreamble(preambleLines);
   const values = [], decisions = ["No header row: read as a list of labels and values"];
+  const notes = meta.lines.slice(1).filter((l) => !isBoilerplate(l.text)).map((l) => ({ ...l, where: "above", scope: { kind: "table" }, qualifiers: qualifiersOf(l.text) }));
+  const period = resolvePeriod(meta, null);
   let r = r0;
   for (; r <= g.rows; r++) {
     if (isBlank(g, r)) break;
     const cells = rowCells(g, r);
-    if (cells.length !== 2) break;
-    const [k, x] = cells;
-    const label = String(k.raw).trim();
+    if (!looksLikePair(cells)) break;
+    const [k, x, extra] = cells;
+    const label = String(k.raw).trim().replace(/\s*:\s*$/, "");
     const v = normaliseValue(x.raw, x.text, { numFmt: x.numFmt, percentColumn: /%|rate/i.test(label) && typeof x.raw === "number" && x.raw >= 0 && x.raw <= 1 });
     if (v.flags?.includes("fraction_read_as_percent")) decisions.push(`"${label}" = ${x.raw}, read as ${Math.round(v.value * 100) / 100}% because the label is a rate`);
     if (v.kind === "text") decisions.push(`"${label}" = "${v.value}" is a description, not a number. Kept as text.`);
-    const audience = mergeAudience([{ text: meta.title || "" }]);
+    const rowNotes = [];
+    if (x.comment) rowNotes.push({ column: "comment", text: x.comment, ref: x.ref });
+    if (k.comment) rowNotes.push({ column: "comment", text: k.comment, ref: k.ref });
+    if (extra) rowNotes.push({ column: "note", text: String(extra.raw).trim(), ref: extra.ref });
+    const qualifiers = [...rowNotes, ...notes].flatMap((n) => (n.qualifiers || qualifiersOf(n.text)).map((q) => ({ key: q, text: n.text, ref: n.ref, scope: n.scope ? "every value in the list" : "this row" })));
+    const flags = [...(v.flags || [])];
+    if (v.scale) flags.push("abbreviated");
     values.push({
-      file, sheet: g.sheet, ref: x.ref, hidden: g.hiddenRows.has(r), original: v.original,
+      file, sheet: g.sheet, ref: x.ref, hidden: g.hiddenRows.has(r) || g.hiddenCols.has(x.c), original: v.original,
       kind: v.kind, value: v.value ?? null, min: v.min, max: v.max, currency: v.currency, scale: v.scale, reason: v.reason || null,
-      needsReview: false, metric: label, unit: null, column: label, audience,
-      entity: meta.title || null, attributes: {}, group: null, period: null, tablePeriod: null,
-      flags: v.flags || [], notes: x.comment ? [{ column: "comment", text: x.comment, ref: x.ref }] : [], tableNotes: [],
+      needsReview: false, metric: label, unit: unitIn(label), column: label, audience: mergeAudience([{ text: meta.title || "" }]),
+      entity: meta.title || null, attributes: {}, group: null, period: null, tablePeriod: period,
+      flags, notes: rowNotes, tableNotes: notes.map((n) => n.text), qualifiers, table: `${ref(r0, k.c)}:${ref(r, x.c)}`,
     });
   }
   if (!values.length) return null;
-  return { next: r, table: { range: `${ref(r0, 1)}:${ref(r - 1, 2)}`, headerRow: null, title: meta.title, period: null, columns: [], rows: values.length, groups: [], notes: [], preamble: meta.lines, decisions, values, layout: "label_value" } };
+  // a list of words only (e.g. "Prepared by | Jo") is information, not data
+  if (!values.some((v) => v.kind !== "text")) return null;
+  for (const v of values) v.table = `${ref(r0, 1)}:${ref(r - 1, 3)}`;
+  return { next: r, table: { range: `${ref(r0, 1)}:${ref(r - 1, values.some((v) => v.notes.some((n) => n.column === "note")) ? 3 : 2)}`, headerRow: null, title: meta.title, period, columns: [], rows: values.length, groups: [], notes, preamble: meta.lines, decisions, values, layout: "label_value" } };
 }

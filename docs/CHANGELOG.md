@@ -1,5 +1,17 @@
 # Changelog
 
+## Mon 2 Nov 2026 (later)
+
+**Changed** (reader, general rules; nothing file-specific)
+- Notes that change what a figure means (VAT, commission, uplift/discount, card/indicative/estimate, not yet confirmed) are found wherever they are: above the table, below it, in a notes column or a cell comment. Each is kept with exactly the values it covers: the whole table, one column or column group, or named rows ("rows 8 & 11"). Lines above the table are now kept too.
+- A column that writes money several ways ("£5k", "10000", "£10,000") is read as money throughout; figures without a currency sign are flagged.
+- Percentage splits (boys/girls, male/female, age bands) that don't add up to 100% are reported, never corrected.
+- Tabs that cover different reporting periods are flagged so they're never combined. Periods are also read from "Q4 2026" / "October 2026" titles, ISO dotted dates and two-digit years (flagged).
+- Label/value lists can have a third note column and labels ending in ":"; lists of words only are kept as information, not data.
+- More non-age audiences recognised (mums, carers, guardians, homemakers, buyers).
+- GitHub repo renamed to `signifii-connectors`.
+- 35 tests.
+
 ## Mon 2 Nov 2026
 
 **Changed**
@@ -16,5 +28,4 @@
 - Sentry.
 
 **Waiting on Sadie**
-- Rename the GitHub repo to `signifii-connectors`.
 - Re-add the connector with the `signifii-demos` address, then delete the old `media-plan-connector` service.

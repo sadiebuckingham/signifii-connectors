@@ -6,6 +6,7 @@ import { xlsxToGrids, csvToGrids, rowCells } from "./grid.js";
 import { readSheet } from "./tables.js";
 import { parseDateText, resolveDateOrder } from "./values.js";
 import { bandsOverlap, parseAudience } from "./audience.js";
+import { QUALIFIERS } from "./notes.js";
 
 // Row-level personal data. If a file looks like this, nothing is ingested.
 const PII_HEADER = /^(first\s*name|last\s*name|surname|forename|given\s*name|full\s*name|name|child'?s?\s*name|pupil|student\s*(id|name)|email|e-?mail(\s*address)?|date\s*of\s*birth|d\.?o\.?b\.?|birth\s*date|post\s*code|postcode|home\s*address|address|phone|mobile|telephone|child\s*id|user\s*id|member\s*id|ip\s*address)$/i;
@@ -48,6 +49,9 @@ const FLAG_TEXT = {
   fraction_read_as_percent: "Fractions read as percentages (e.g. 0.41 → 41%) because the column or label is a rate",
   comma_decimal: "Commas read as decimal points (e.g. 5,38 → 5.38)",
   number_stored_as_text: "Numbers stored as text (e.g. \"80,504\", \"113.0k\"): converted, original kept",
+  currency_from_column: "Money written without a currency sign in a money column (e.g. \"10000\" next to \"£10,000\" and \"£5k\"): read in that column's currency",
+  abbreviated: "Abbreviated figures expanded (e.g. \"£5k\" → 5,000, \"48.2k\" → 48,200)",
+  two_digit_year: "Two-digit years read as 20xx",
   us_date_order: "Dates read as US month/day order",
   uk_date_order: "Dates read as UK day/month order",
   text_in_numbers: "Text in a number column: can't be used as a number. Needs review",
@@ -67,7 +71,8 @@ function checkThese(values, report) {
     if (v.kind === "range") add("range", v);
     if (v.kind === "none") add("none", v, `${v.original} = ${v.reason}`);
     if (v.kind === "text") add("text_in_numbers", v);
-    for (const f of ["modelled", "footnote_marker", "fraction_read_as_percent", "comma_decimal", "number_stored_as_text"]) if (v.flags.includes(f)) add(f, v);
+    for (const f of ["modelled", "footnote_marker", "fraction_read_as_percent", "comma_decimal", "currency_from_column", "abbreviated"]) if (v.flags.includes(f)) add(f, v);
+    if (v.flags.includes("number_stored_as_text")) add("number_stored_as_text", v, `column "${v.column}"`);
     if (v.notes.some((n) => n.column === "comment" || n.column === "header comment")) add("comment", v, v.notes.find((n) => n.column.includes("comment")).text);
   }
   // overlapping age bands inside one sheet: never add them together
@@ -89,7 +94,81 @@ function checkThese(values, report) {
     const kinds = [...new Set(nonAge.map(typeLabel))].slice(0, 4);
     groups.set("non_age", { key: "non_age", text: "Audiences that are not child age bands (parents, accounts, shoppers…): kept separate, never mapped to a child age band", count: nonAge.length, examples: kinds, details: new Set() });
   }
-  return [...groups.values()].map((g) => ({ ...g, details: [...g.details].slice(0, 6) }));
+  // notes that change what a figure means, one entry per note, with what it covers
+  const qual = new Map();
+  for (const v of values) for (const q of v.qualifiers || []) {
+    const k = `${q.text}`;
+    const e = qual.get(k) || { key: `meaning:${k}`, kind: "meaning", text: `Note that changes what figures mean: "${q.text}"`, count: 0, examples: [], details: new Set(), kinds: new Set() };
+    e.count++; e.kinds.add(QUALIFIER_LABEL[q.key]);
+    if (e.examples.length < 3) e.examples.push(`${v.sheet}!${v.ref} "${v.original}"`);
+    e.details.add(`${v.sheet}!${q.ref}, applies to ${q.scope}`);
+    qual.set(k, e);
+  }
+  for (const e of qual.values()) groups.set(e.key, { ...e, details: new Set([[...e.kinds].join("; "), ...e.details]) });
+
+  // tabs or tables covering different reporting periods
+  const periods = new Map();
+  for (const s of report.sheets) for (const t of s.tables) {
+    const p = t.period || t.columnPeriod;
+    const label = p ? `${p.from}${p.to && p.to !== p.from ? ` to ${p.to}` : ""}${t.period?.basis ? ` (${t.period.basis})` : t.period ? "" : " (from the date column)"}` : "no period stated";
+    periods.set(`${s.sheet}${s.tables.length > 1 ? ` ${t.range}` : ""}`, label);
+  }
+  const distinct = new Set([...periods.values()]);
+  if (periods.size > 1 && distinct.size > 1) {
+    groups.set("periods", { key: "periods", text: "Tabs cover different reporting periods: figures from different periods are kept apart, never combined", count: periods.size, examples: [], details: new Set([...periods].map(([k, p]) => `${k}: ${p}`)) });
+  } else if (periods.size && [...distinct][0] === "no period stated") {
+    groups.set("periods", { key: "periods", text: "No reporting period stated in this file", count: periods.size, examples: [...periods.keys()].slice(0, 4), details: new Set() });
+  }
+
+  // percentage splits (boys/girls, age bands) that don't add up to 100%
+  for (const sp of splitsNot100(values)) {
+    const g = groups.get("splits") || { key: "splits", text: "Percentage splits that don't add up to 100%: shown as written, never corrected", count: 0, examples: [], details: new Set() };
+    g.count++; g.details.add(sp); groups.set("splits", g);
+  }
+  return [...groups.values()].map((g) => ({ ...g, details: [...g.details].slice(0, 8) }));
+}
+
+const QUALIFIER_LABEL = Object.fromEntries(QUALIFIERS.map((q) => [q.key, q.label]));
+const SPLIT_LABEL = /%|\bshare\b|\bsplit\b|\bproportion\b|\bcomposition\b|\bprofile\b/i;
+const rowOf = (ref) => Number(String(ref).match(/\d+$/)[0]);
+
+// Two ways a split is laid out: categories as rows (metric labels "% boys", "% girls")
+// or as columns ("% Male", "% Female"). Only gender or non-overlapping age categories count.
+function splitsNot100(values) {
+  const out = [];
+  const pct = values.filter((v) => v.kind === "percent" || v.kind === "none");
+  const catOf = (label) => {
+    if (!SPLIT_LABEL.test(label)) return null;
+    const a = parseAudience(label.replace(/%/g, " "));
+    if (a.gender && !a.age) return { kind: "gender", key: a.gender };
+    if (a.age && !a.gender) return { kind: "age", key: a.age.label, age: a.age };
+    return null;
+  };
+  const modes = [
+    { label: (v) => v.metric, key: (v) => [v.sheet, v.table, v.column, v.entity, v.period, v.group].join("|"), where: (v) => `${v.sheet}, ${v.column}` },
+    { label: (v) => v.column, key: (v) => [v.sheet, v.table, rowOf(v.ref)].join("|"), where: (v) => `${v.sheet}, row ${rowOf(v.ref)}${v.entity ? ` (${v.entity})` : ""}` },
+  ];
+  for (const m of modes) {
+    const groups = new Map();
+    for (const v of pct) {
+      const c = catOf(m.label(v));
+      if (!c) continue;
+      const k = m.key(v); const a = groups.get(k) || []; a.push({ v, c }); groups.set(k, a);
+    }
+    for (const items of groups.values()) {
+      if (items.length < 2) continue;
+      const kinds = new Set(items.map((i) => i.c.kind));
+      const cats = new Set(items.map((i) => i.c.key));
+      if (kinds.size !== 1 || cats.size !== items.length) continue;
+      if ([...kinds][0] === "age" && items.some((a, i) => items.some((b, j) => i < j && bandsOverlap(a.c.age, b.c.age)))) continue;
+      if (items.some((i) => i.v.kind === "none")) continue;
+      const sum = items.reduce((t, i) => t + i.v.value, 0);
+      if (Math.abs(sum - 100) <= 0.05) continue;
+      const rounding = items[0].v.tableNotes.some((n) => /rounding|may not (sum|total|add)/i.test(n)) ? " (the file says this is rounding)" : "";
+      out.push(`${m.where(items[0].v)}: ${items.map((i) => `${m.label(i.v)} ${i.v.original}`).join(" + ")} = ${Math.round(sum * 100) / 100}%${rounding}`);
+    }
+  }
+  return out;
 }
 
 export function detectType(name, buffer) {

@@ -67,11 +67,13 @@ function fileSection(r, i) {
   const tables = (r.sheets || []).flatMap((s) => s.tables.map((t) => ({ ...t, sheet: s.sheet })));
   const tablesHtml = tables.map((t) => `<div class="table-read">
       <div><b>${esc(t.sheet)}</b> <span class="mono">${esc(t.range)}</span> · ${t.rows} row${t.rows === 1 ? "" : "s"}${t.layout === "label_value" ? " · label/value list" : ""}</div>
-      <div class="tmeta">${[t.title && `Title: ${esc(t.title)}`, t.period && `Period: ${esc(t.period.from)}${t.period.to ? ` to ${esc(t.period.to)}` : ""} <span class="mono">(${esc(t.period.original)})</span>`, t.unit && `Unit: ${esc(t.unit)}`, t.groups?.length && `Groups carried down: ${t.groups.map(esc).join(", ")}`].filter(Boolean).join(" · ") || ""}</div>
+      <div class="tmeta">${[t.title && `Title: ${esc(t.title)}`, t.period ? `Period: ${esc(t.period.from)}${t.period.to ? ` to ${esc(t.period.to)}` : ""} <span class="mono">(${esc(t.period.original)})</span>${t.period.basis ? ` · ${esc(t.period.basis)}` : ""}` : t.columnPeriod ? `Dates in the data: ${esc(t.columnPeriod.from)} to ${esc(t.columnPeriod.to)}` : "No period stated", t.unit && `Unit: ${esc(t.unit)}`, t.groups?.length && `Groups carried down: ${t.groups.map(esc).join(", ")}`].filter(Boolean).join(" · ") || ""}</div>
       ${t.columns?.length ? `<div class="chips">${t.columns.map((col) => `<span class="chip${col.hidden ? " hidden" : ""}">${esc(col.label)} <i>${ROLE[col.role] || esc(col.role)}${col.percent ? ", %" : ""}${col.hidden ? ", hidden" : ""}</i></span>`).join("")}</div>` : ""}
       ${t.decisions?.length ? `<ul class="plain">${t.decisions.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>` : ""}
     </div>`).join("");
-  const checks = (r.checkThese || []).map((g) => `<li class="check"><span class="n">${g.count}</span><span>${esc(g.text)}${g.details?.length ? `<span class="ex">${g.details.map(esc).join(" · ")}</span>` : ""}<span class="ex">${g.examples.map(esc).join(" · ")}</span></span></li>`).join("");
+  const meaning = (r.checkThese || []).filter((g) => g.kind === "meaning");
+  const meaningHtml = meaning.map((g) => `<li class="check"><span class="n">${g.count}</span><span>${esc(g.text.replace(/^Note that changes what figures mean: /, ""))}${g.details?.length ? `<span class="ex">${g.details.map(esc).join(" · ")}</span>` : ""}</span></li>`).join("");
+  const checks = (r.checkThese || []).filter((g) => g.kind !== "meaning").map((g) => `<li class="check"><span class="n">${g.count}</span><span>${esc(g.text)}${g.details?.length ? `<span class="ex">${g.details.map(esc).join(" · ")}</span>` : ""}<span class="ex">${g.examples.map(esc).join(" · ")}</span></span></li>`).join("");
   const issues = (r.issues || []).map((x) => `<li class="issue${x.level === "fail" ? " bad" : ""}"><span class="mono">${esc(x.sheet ? `${x.sheet}!` : "")}${esc(x.ref)}</span> ${esc(x.text)}</li>`).join("");
   const skipped = (r.skipped || []).map((x) => `<li><span class="mono">${esc(x.sheet)}!${esc(x.ref)}</span> ${esc(x.text)}</li>`).join("");
   const notes = tables.flatMap((t) => (t.notes || []).map((n) => ({ ...n, sheet: t.sheet }))).filter((n) => !/^notes?:?$/i.test(n.text.trim()));
@@ -87,6 +89,7 @@ function fileSection(r, i) {
       <div><h3>Couldn't read / needs review</h3>${issues ? `<ul class="plain">${issues}</ul>` : '<p class="none">Nothing. Every value was read cleanly or flagged under "Check these".</p>'}
         <h3 style="margin-top:16px">Skipped on purpose</h3>${skipped ? `<ul class="plain">${skipped}</ul>` : '<p class="none">Nothing skipped.</p>'}</div>
     </div>
+    ${meaningHtml ? `<div><h3>Notes that change what a figure means</h3><p class="none" style="margin:0 0 8px">Kept with every value they apply to. The number is how many values each one covers.</p><ul class="plain">${meaningHtml}</ul></div>` : ""}
     ${notesHtml ? `<div><h3>Notes kept from the file</h3><ul class="plain">${notesHtml}</ul></div>` : ""}
   </section>`;
 }

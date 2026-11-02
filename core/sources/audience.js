@@ -10,9 +10,9 @@ const GENDER_WORDS = [
 
 // Audience types that are not age bands of the people counted.
 const TYPE_WORDS = [
-  [/\bparent(s|al)?\b|\bmums?\b|\bdads?\b|\bhwc\b|housewi(fe|ves)\s*w(ith|\/)\s*child/i, "parents"],
+  [/\bparent(s|al)?\b|\bmums?\b|\bmoms?\b|\bdads?\b|\bhwc\b|housewi(fe|ves)|\bhomemakers?\b|\bcarers?\b|\bguardians?\b|\bgrandparents?\b/i, "parents"],
   [/\bhouseholds?\b/i, "households"],
-  [/\bshoppers?\b/i, "shoppers"],
+  [/\bshoppers?\b|\bbuyers?\b|\bpurchasers?\b/i, "shoppers"],
   [/\bsubscribers?\b/i, "subscribers"],
   [/\baccounts?\b/i, "accounts"],
   [/\bchild(ren)?\b|\bkids?\b|\bboys\b|\bgirls\b/i, "children"],

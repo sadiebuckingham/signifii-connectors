@@ -66,6 +66,15 @@ export function parseDateText(s) {
   if (m && mo && validDate(Number(m[3]), mo, Number(m[1]))) {
     return { kind: "date", value: iso(Number(m[3]), mo, Number(m[1])), style: "written", flags: [] };
   }
+  m = t.match(/^(\d{4})[./](\d{2})[./](\d{2})$/);
+  if (m && validDate(Number(m[1]), Number(m[2]), Number(m[3]))) return { kind: "date", value: `${m[1]}-${m[2]}-${m[3]}`, style: "ymd", flags: [] };
+  // two-digit years ("15.08.26", "13/10/26") are read as 20xx and flagged
+  m = t.match(/^(\d{1,2})([/.])(\d{1,2})\2(\d{2})$/);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[3]), y = 2000 + Number(m[4]);
+    if (m[2] === ".") return validDate(y, b, a) ? { kind: "date", value: iso(y, b, a), style: "dotted_dmy", flags: ["two_digit_year"] } : null;
+    return { kind: "date", parts: [a, b, y], style: "slash", value: null, flags: ["two_digit_year"] };
+  }
   m = t.match(/^(\d{1,2})([/.])(\d{1,2})\2(\d{4})$/);
   if (m) {
     const a = Number(m[1]), b = Number(m[3]), y = Number(m[4]);

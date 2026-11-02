@@ -4,7 +4,7 @@ Update this whenever anything is created or changed on Render, GitHub or Sentry.
 
 | Thing | Where | Notes |
 |---|---|---|
-| Code | GitHub `sadiebuckingham/media-plan-connector` (private), branch `main`. **To be renamed `signifii-connectors`** (Sadie, GitHub → Settings → Rename) | One repo for every connector |
+| Code | GitHub `sadiebuckingham/signifii-connectors` (private), branch `main` (renamed from `media-plan-connector`; old links redirect) | One repo for every connector |
 | Demo service | Render `signifii-demos` (`srv-dbk9hl0ae00c73880s20`), Frankfurt, Starter, workspace "My Workspace" | https://signifii-demos.onrender.com · auto-deploys from `main` · `CONNECTOR=media-plan` |
 | Media Plan connector URL | `https://signifii-demos.onrender.com/mcp/media-plan/<CONNECTOR_TOKEN>` | Token in Render env + password manager |
 | Media Plan web plan link | `https://signifii-demos.onrender.com/p/<PLAN_LINK_TOKEN>` | |
