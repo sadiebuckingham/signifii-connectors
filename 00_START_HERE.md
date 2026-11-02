@@ -5,7 +5,11 @@
    - **Canva Guides**: `docs/briefs/canva-guides/canva-guides-brief.md`
    - **Media Plan**: `docs/briefs/media-plan/` (read `media-plan-connector-brief.md`, then `-discovery.md`, then `-sources.md`). The sources doc replaces section 1 of the brief. The five spreadsheets in `sample-data/media-plan/` replace the rate card and audience sources listed in the brief; still generate its other demo files.
 
-## Order
+## Priority this week (decided 2 Nov 2026)
+
+**Media Plan first, Canva Guides after.** The Media Plan demo goes to an external person on Friday 6 Nov 2026 and must be fully tested by then. The plan for the week is `docs/media-plan-demo-week-plan.md`. Canva Guides (including its API spike) starts once the Media Plan demo has shipped.
+
+## Order (original; see the priority note above)
 
 1. Set up the repo layout from `CLAUDE.md` with an empty `core/`, and create `docs/WHERE-THINGS-LIVE.md` and `docs/CHANGELOG.md`.
 2. **One shared spike** covering both briefs: a hello-world MCP App in claude.ai, plus the Canva API spike (OAuth, brand template dataset, one autofill, one PDF export, Welsh characters). Report back before building further.

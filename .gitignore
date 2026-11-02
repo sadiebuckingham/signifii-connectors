@@ -1,4 +1,4 @@
 node_modules/
-test/.host.bundle.js
+core/mcp/test-host/.host.bundle.js
 .env
 dist/

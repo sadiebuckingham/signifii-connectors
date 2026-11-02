@@ -30,6 +30,21 @@ function slide(n, title, body, plan) {
 </section>`;
 }
 
+const CHECK_ICON = { pass: "✓", warn: "!", fail: "✕", not_run: "–", not_checked: "?", off: "○" };
+const CHECK_WORD = { pass: "Pass", warn: "Warning", fail: "Fail", not_run: "Not run yet", not_checked: "Not checked", off: "Off" };
+
+// Checks come only from the rules engine. No result -> "not run", never "pass".
+export function renderChecks(run) {
+  if (!run || !run.results?.length) {
+    return '<ul class="checks"><li class="not_run"><span class="ci">–</span><span><strong>Not run yet.</strong> No checks have run on this plan.</span></li></ul>';
+  }
+  const items = run.results.map((c) => `<li class="${esc(c.status)}"><span class="ci" aria-hidden="true">${CHECK_ICON[c.status] || "?"}</span>
+    <span><span class="cw">${CHECK_WORD[c.status] || esc(c.status)}</span> <strong>${esc(c.title)}</strong><br><span class="cm">${esc(c.message || "")}</span>${c.needsTick ? (c.ticked ? ` <em>(ticked by ${esc(c.ticked.by)})</em>` : " <em>(needs planner tick)</em>") : ""}</span></li>`).join("");
+  const s = run.summary;
+  const ran = new Date(run.ranAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" });
+  return `<ul class="checks">${items}</ul><p class="checks-sum">${s.pass} pass · ${s.warn} warning · ${s.fail} fail · ${s.notRun} not run · ${s.notChecked} not checked. Checked ${esc(ran)}.${s.canExportFinal ? "" : " Can't be exported as final yet."}</p>`;
+}
+
 export function planTotals(plan) {
   const total = plan.mix.reduce((a, r) => a + r.budget_gbp, 0);
   return { total, rows: plan.mix.map((r) => ({ ...r, share: total ? (r.budget_gbp / total) * 100 : 0 })) };
@@ -93,9 +108,8 @@ export function renderPlan(plan) {
 
   slides.push(slide(6, "Why these channels", `<ul class="why">${plan.rationale.map((r) => `<li><strong>${esc(r.channel)}</strong><span>${esc(r.text)}</span></li>`).join("")}</ul>`, plan));
 
-  const icon = { pass: "✓", warn: "!", fail: "✕" };
-  slides.push(slide(7, "Sign-off checks", `<ul class="checks">${plan.checks.map((c) => `<li class="${c.status}"><span class="ci">${icon[c.status]}</span><span>${esc(c.text)}${c.needs_tick ? ' <em>(needs planner tick)</em>' : ""}</span></li>`).join("")}</ul>
-  <p class="signoff">Planning Director sign-off: ${plan.signoff.director ? esc(plan.signoff.director) + ", " + fmtDate(plan.signoff.date) : "<em>not signed</em>"} · ${esc(plan.version)}</p>`, plan));
+  slides.push(slide(7, "Sign-off checks", renderChecks(plan.checkRun) + `
+  <p class="signoff">Planning Director sign-off: ${plan.signoff?.director ? esc(plan.signoff.director) + ", " + fmtDate(plan.signoff.date) : "<em>not signed</em>"} · ${esc(plan.version)}</p>`, plan));
 
   slides.push(slide(8, "Next steps", `<dl class="brief">
     <div><dt>Approval needed by</dt><dd>${fmtDate(plan.next_steps.approval_by)}</dd></div>

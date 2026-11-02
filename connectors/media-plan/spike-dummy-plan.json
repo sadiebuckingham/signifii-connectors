@@ -1,5 +1,5 @@
 {
-  "_label": "FICTIONAL DEMO DATA - SPIKE DUMMY PLAN. Numbers are placeholders typed by hand for the display test only; they do not come from any source file.",
+  "_label": "FICTIONAL DEMO DATA - SPIKE DUMMY PLAN. Numbers are placeholders typed by hand for the display test only; they do not come from any source file. Checks are not stored here: they are run by the rules engine.",
   "plan_id": "spike-bramble-bots-q4",
   "brief_id": "bramble-bots-q4",
   "version": "v0.1 (spike)",
@@ -171,25 +171,6 @@
     {
       "channel": "Cinema",
       "text": "Family films over the Christmas holiday weeks."
-    }
-  ],
-  "checks": [
-    {
-      "status": "pass",
-      "text": "Channel budgets add up exactly to the brief budget"
-    },
-    {
-      "status": "pass",
-      "text": "All flighting inside the campaign window"
-    },
-    {
-      "status": "warn",
-      "text": "YouTube line reaches under-13s: targeting review needed",
-      "needs_tick": true
-    },
-    {
-      "status": "fail",
-      "text": "Spike plan: numbers are dummy, not sourced"
     }
   ],
   "signoff": {

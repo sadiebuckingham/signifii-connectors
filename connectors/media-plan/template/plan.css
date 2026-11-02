@@ -7,21 +7,11 @@
   --pass: #2E7D4F; --warn: #A86B00; --fail: #B3261E;
   --head: "Nunito", ui-rounded, system-ui, sans-serif;
   --body: "Inter", system-ui, sans-serif;
+  --brand: var(--navy); --brand-body: var(--body);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body { font-family: var(--body); color: var(--color-text-primary, #141413); background: transparent; }
-
-/* ---------- App chrome (host tokens) ---------- */
-.bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 0; flex-wrap: wrap; }
-.bar .meta { font-size: var(--font-text-xs-size, 12px); color: var(--color-text-tertiary, #73726C); }
-.btn { min-height: 44px; padding: 0 14px; border-radius: var(--border-radius-md, 8px); border: 1px solid var(--color-border-secondary, rgba(31,30,29,.3));
-  background: var(--color-background-primary, #fff); color: var(--color-text-primary, #141413); font: 600 14px var(--body); cursor: pointer; }
-.btn.primary { background: var(--navy); color: #fff; border-color: var(--navy); }
-.diag { font: 12px/1.4 var(--font-mono, ui-monospace, monospace); white-space: pre-wrap; background: var(--color-background-secondary, #F5F4ED);
-  color: var(--color-text-secondary, #3D3D3A); border-radius: 8px; padding: 10px; margin: 8px 0; overflow-wrap: anywhere; }
-.skeleton { height: 160px; border-radius: 12px; background: linear-gradient(90deg, rgba(127,127,127,.12), rgba(127,127,127,.22), rgba(127,127,127,.12)); background-size: 200% 100%; animation: sk 1.2s infinite; }
-@keyframes sk { to { background-position: -200% 0; } }
 
 /* ---------- Inline summary card ---------- */
 .summary { background: var(--navy); color: #fff; border-radius: 12px; padding: 16px; }
@@ -80,11 +70,11 @@ body { font-family: var(--body); color: var(--color-text-primary, #141413); back
 .checks li { display: flex; gap: 10px; align-items: flex-start; }
 .ci { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 800 12px var(--body); flex: none; }
 .pass .ci { background: var(--pass); } .warn .ci { background: var(--warn); } .fail .ci { background: var(--fail); }
+.not_run .ci, .not_checked .ci, .off .ci { background: #B8B2A3; }
+.checks .cw { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-right: 4px; }
+.checks .cm { color: var(--muted); font-size: 12.5px; }
+.checks-sum { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
 .signoff { margin-top: 14px; font-size: 13px; color: var(--muted); }
-
-/* Source markers */
-.src { border: 0; background: none; color: var(--muted); font-size: 11px; padding: 0 0 0 3px; cursor: help; vertical-align: super; line-height: 1; }
-.src-pop { position: fixed; z-index: 10; max-width: 260px; background: var(--navy); color: #fff; font: 12px/1.4 var(--body); padding: 8px 10px; border-radius: 8px; pointer-events: none; }
 
 /* Wide table scroll on very narrow screens, no page-level horizontal scroll */
 .slide-body { overflow-x: auto; }
