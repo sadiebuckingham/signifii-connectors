@@ -127,8 +127,21 @@ export function createService({ store, library, publicUrl = "", renderFile = nul
       const plan = await this.getPlan(planId);
       const c = await ctx();
       const { plan: next, message } = fn(plan, args, c);
-      const saved = await saveVersion(planId, next, note || message);
+      // any change after sign-off makes it a draft again
+      const unsigned = Boolean(next.signoff);
+      if (unsigned) { next.signoff = null; next.status = "DRAFT"; }
+      const saved = await saveVersion(planId, next, (note || message) + (unsigned ? " Sign-off cleared: the plan changed after it was signed." : ""));
       return present(saved, message);
+    },
+
+    // Planning Director sign-off: only when every check has passed or been ticked.
+    async signOff(planId, { name }) {
+      if (!String(name || "").trim()) throw new E.PlanError("Give the name of the person signing off.");
+      const plan = await this.getPlan(planId);
+      const r = await present(plan, null);
+      if (!r.checkRun.summary.canExportFinal) throw new E.PlanError(`Can't sign off yet: ${r.checkRun.summary.blockers.join("; ")}.`);
+      const next = { ...structuredClone(plan), status: "FINAL", signoff: { by: String(name).trim(), at: new Date().toISOString(), version: plan.version + 1 } };
+      return present(await saveVersion(planId, next, `Signed off by ${next.signoff.by}`), `Signed off by ${next.signoff.by}.`);
     },
 
     async tick(planId, { rule_id, name }) {

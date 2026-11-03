@@ -11,7 +11,9 @@
 - The brief's own objective is shown, and passed to Claude, until the short version is written.
 - Source data is held in memory for at most 2 minutes, then read from the folder again.
 - Reset demo: `/admin/media-plan/reset` (admin password) puts the demo folder back to the original sample files.
-- 53 tests.
+- Web link: **Print or save as PDF** (one slide per A4 landscape page, a DRAFT watermark until signed off) and **Planning Director sign-off** (admin password). Sign-off is only possible when no check fails, nothing is "not run" and every warning is ticked. Any later change to the plan clears the sign-off and makes it a draft again.
+- Slides grow to fit their content instead of clipping it.
+- 54 tests, including a complete plan that passes every check, is signed off, then changes back to draft.
 
 **To delete (Sadie):** Render Postgres `signifii-demos-db` (not used) and the old `media-plan-connector` service.
 

@@ -27,7 +27,7 @@ body { font-family: var(--body); color: var(--color-text-primary, #141413); back
 .slide { background: var(--paper); color: var(--ink); border-radius: 12px; display: flex; flex-direction: column;
   border: 1px solid var(--line); }
 /* 16:9 at wide widths; a slide with more content grows rather than clipping it */
-@container (min-width: 640px) { .slide { aspect-ratio: 16 / 9; min-height: fit-content; } }
+@container (min-width: 640px) { .slide { min-height: calc(100cqw * 9 / 16); } }
 .slide-head { display: flex; align-items: center; gap: 10px; padding: 18px 24px 8px; }
 .slide-head h2 { font: 800 22px/1.2 var(--head); margin: 0; flex: 1; }
 .slide-no { width: 28px; height: 28px; border-radius: 50%; background: var(--yellow); color: var(--navy); display: grid; place-items: center; font: 800 14px var(--head); flex: none; }

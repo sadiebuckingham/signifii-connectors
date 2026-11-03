@@ -211,3 +211,28 @@ test("every figure is re-read from its file when the plan is shown; changes and 
   assert.equal(r.vm.figures[0].value, "Source missing");
   wb.worksheets[0].getCell(ref).value = before; await wb.xlsx.writeFile(file);
 });
+
+test("a complete plan passes every check, can be signed off, and any change makes it a draft again", async () => {
+  const p = (await svc.startPlan({ client: "Bramble Bots" })).plan.id;
+  const go = (op, a) => svc.apply(p, op, a);
+  await assert.rejects(svc.signOff(p, { name: "Ana" }), /Can't sign off yet/);
+  await go("add_channel", { name: "Kids TV", category: "TV", rate_id: rate("Pip TV") });
+  await go("add_channel", { name: "YouTube", category: "Online video", rate_id: rate("made for kids"), audiences: ["4-9"] });
+  await go("add_channel", { name: "Parents social", category: "Social", rate_id: rate("Social Platform A"), audiences: ["parents"] });
+  for (const [c, s] of [["Kids TV", 50], ["YouTube", 25], ["Parents social", 25]]) await go("set_allocation", { channel: c, share_pct: s });
+  for (const c of ["Kids TV", "YouTube", "Parents social"]) await go("set_flighting", { channel: c, weeks: "all" });
+  const fig = (await svc.audience({ band: "4-9", search: "Pip TV" })).rows.find((r) => r.audience.includes("Children 4-9"));
+  await go("add_audience_figure", { value_id: fig.id, for_band: "4-9" });
+  await go("write_section", { slot: "objective", text: "Put Bramble Bots on Christmas wish lists with kids 4-9 and their parents." });
+  await go("write_section", { slot: "rationale:Kids TV", text: "Broad family reach across the whole campaign, including the final two weeks." });
+  await go("write_section", { slot: "rationale:YouTube", text: "Made-for-kids placements only: contextual, with no personalised targeting." });
+  await go("write_section", { slot: "rationale:Parents social", text: "Reaches the parents who buy, every week of the campaign." });
+  let r = await svc.open(p);
+  const open = r.checkRun.results.filter((c) => c.status !== "pass");
+  assert.deepEqual(open.map((c) => c.ruleId), ["R7"], JSON.stringify(open.map((c) => [c.ruleId, c.status, c.message])));
+  await svc.tick(p, { rule_id: "R7", name: "Ana" });
+  r = await svc.signOff(p, { name: "Ana Okafor" });
+  assert.equal(r.plan.status, "FINAL"); assert.equal(r.plan.signoff.by, "Ana Okafor");
+  r = await go("move_budget", { from: "Kids TV", to: "YouTube", amount_gbp: 1000 });
+  assert.equal(r.plan.status, "DRAFT"); assert.equal(r.plan.signoff, null);
+});

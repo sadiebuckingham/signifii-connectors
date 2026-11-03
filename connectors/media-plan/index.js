@@ -1,6 +1,7 @@
 // Media Plan connector: tool wiring only. Engines live in core/ and in the
 // plan engine (engine.js). FICTIONAL DEMO DATA ONLY (Little Lantern Media / Bramble Bots).
 import { readFileSync } from "node:fs";
+import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FsStore } from "../../core/storage/fs-store.js";
@@ -26,12 +27,43 @@ const store = new FsStore(WORK, { label: "Demo client folder" });
 const library = new SourceLibrary(store, config.folders.sharedData);
 const PAGE_CSS = readFileSync(path.join(ROOT, "core/mcp/app-shell/shell.css"), "utf8") + readFileSync(path.join(here, "template/plan.css"), "utf8");
 const MARKERS = readFileSync(path.join(ROOT, "core/mcp/app-shell/markers.js"), "utf8").replace("export function", "function");
-const planPage = (vm) => `<!doctype html>
+const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+const PRINT_CSS = `
+.toolbar{max-width:1040px;margin:0 auto;padding:16px 16px 0;display:flex;flex-wrap:wrap;gap:10px;align-items:center;font:14px Inter,system-ui,sans-serif;color:#1B2A4A}
+.toolbar button,.signoff-box button{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid #1B2A4A;background:#1B2A4A;color:#fff;font:600 14px Inter,system-ui,sans-serif;cursor:pointer}
+.toolbar .status{font-weight:700}
+.signoff-box{max-width:1040px;margin:0 auto;padding:0 16px 32px;font:14px Inter,system-ui,sans-serif;color:#1B2A4A}
+.signoff-box form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
+.signoff-box input{min-height:44px;padding:0 12px;border:1px solid #B8B2A3;border-radius:8px;font:inherit}
+.blocked{color:#B3261E}
+.draft-mark{display:none}
+@page{size:A4 landscape;margin:8mm}
+@media print{
+  body{background:#fff!important}
+  .toolbar,.signoff-box,.src,.src-pop{display:none!important}
+  main{max-width:none!important;padding:0!important}
+  .deck{display:block!important}
+  .slide{break-after:page;page-break-after:always;break-inside:avoid;border:0!important;border-radius:0!important;aspect-ratio:auto!important;min-height:180mm}
+  .draft-mark{display:block;position:fixed;inset:0;display:flex;align-items:center;justify-content:center;font:900 140px Nunito,sans-serif;color:rgba(179,38,30,.10);transform:rotate(-24deg);pointer-events:none;z-index:9}
+  .slide-checks .checks{display:block;columns:2;column-gap:28px;font-size:11.5px}
+  .slide-checks .checks li{break-inside:avoid;margin-bottom:5px}
+  .slide-checks .checks .cm{font-size:10.5px}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}`;
+// The plan as a web page: same template as in Claude, plus print and sign-off (web only).
+const planPage = (vm, { token = null, checkSummary = null, notice = "" } = {}) => `<!doctype html>
 <html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${vm.client} · ${vm.campaign?.text || "Media plan"}</title>
+<title>${esc(vm.client)} · ${esc(vm.campaign?.text || "Media plan")}${vm.status === "FINAL" ? "" : " (DRAFT)"}</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Nunito:wght@700;800;900&display=swap">
-<style>${PAGE_CSS} body{background:#EDE8DC;} main{max-width:1040px;margin:0 auto;padding:24px 16px;}</style></head>
-<body><main>${renderPlan(vm)}</main><script>${MARKERS}; wireSourceMarkers(document);</script></body></html>`;
+<style>${PAGE_CSS} body{background:#EDE8DC;} main{max-width:1040px;margin:0 auto;padding:24px 16px;}${PRINT_CSS}</style></head>
+<body>
+${vm.status === "FINAL" ? "" : '<div class="draft-mark" aria-hidden="true">DRAFT</div>'}
+${token ? `<div class="toolbar"><span class="status">${vm.status === "FINAL" ? `Final: signed off by ${esc(vm.signoff)}` : "Draft: not signed off"}</span><button type="button" onclick="window.print()">Print or save as PDF</button>${notice ? `<span>${esc(notice)}</span>` : ""}</div>` : ""}
+<main>${renderPlan(vm)}</main>
+${token && vm.status !== "FINAL" ? `<section class="signoff-box" aria-label="Sign-off"><strong>Planning Director sign-off</strong>
+  ${checkSummary?.canExportFinal ? `<form method="post" action="/p/${esc(token)}/signoff"><label for="so-name">Your name</label><input id="so-name" name="name" required autocomplete="name"><button>Sign off this version</button></form><p>Needs the admin password. Any later change to the plan makes it a draft again.</p>`
+    : `<p class="blocked">Can't be signed off yet: ${esc((checkSummary?.blockers || []).join("; "))}. Fix these in Claude first.</p>`}</section>` : ""}
+<script>${MARKERS}; wireSourceMarkers(document);</script></body></html>`;
 const service = createService({ store, library, publicUrl: process.env.PUBLIC_URL || "", renderFile: planPage });
 
 // ---------- what Claude reads back after each tool
@@ -237,7 +269,20 @@ export default {
       const plan = await service.byToken(req.params.token);
       if (!plan) return res.status(404).type("text").send("This plan link doesn't exist or has been switched off.");
       const r = await service.present(plan, null);
-      res.set("Cache-Control", "no-store").set("X-Robots-Tag", "noindex").type("html").send(planPage(r.vm));
+      res.set("Cache-Control", "no-store").set("X-Robots-Tag", "noindex").type("html").send(planPage(r.vm, { token: req.params.token, checkSummary: r.checkRun.summary }));
+    });
+
+    // Sign-off from the web link (admin password), as the Planning Director prefers a link to Claude.
+    app.post("/p/:token/signoff", ctx.checkAdmin, express.urlencoded({ extended: false }), async (req, res) => {
+      const plan = await service.byToken(req.params.token);
+      if (!plan) return res.status(404).type("text").send("This plan link doesn't exist.");
+      try {
+        const r = await service.signOff(plan.id, { name: req.body?.name });
+        res.type("html").send(planPage(r.vm, { token: req.params.token, checkSummary: r.checkRun.summary, notice: r.message }));
+      } catch (e) {
+        const r = await service.present(plan, null);
+        res.status(e instanceof PlanError ? 409 : 500).type("html").send(planPage(r.vm, { token: req.params.token, checkSummary: r.checkRun.summary, notice: e.message }));
+      }
     });
 
     app.get("/admin/media-plan/sources", ctx.checkAdmin, async (req, res) => {
