@@ -17,7 +17,7 @@ If you can't see "New registration", your account isn't allowed to register apps
 |---|---|
 | Name | `Signifii Connectors (demo)` |
 | Supported account types | **Accounts in any organizational directory (Any Microsoft Entra ID tenant – Multitenant) and personal Microsoft accounts** |
-| Redirect URI | Platform **Web**, URL `https://signifii-demos.onrender.com/auth/microsoft/callback` |
+| Redirect URI | Platform **Web**, URL `https://demos.signifii.com/auth/microsoft/callback` |
 
 Click **Register**.
 
@@ -63,7 +63,7 @@ Save. Render restarts the service. Then tell me it's done.
 This is a second connector, next to the demo one:
 
 1. claude.ai → **Customize** → **Connectors** → **Add custom connector**.
-2. Name `Little Lantern Media Plans (OneDrive)`, URL `https://signifii-demos.onrender.com/mcp/media-plan-onedrive`.
+2. Name `Little Lantern Media Plans (OneDrive)`, URL `https://demos.signifii.com/mcp/media-plan-onedrive`.
 3. Authentication: **Sign in now** (or "Sign in when needed"), OAuth client: **Register automatically**. Leave client ID and secret empty.
 4. Click **Add**, then **Connect**: Microsoft's sign-in page opens. Sign in as `sadie@signifii.com` and allow access.
 5. In a new chat with that connector on, ask: *"Set up the demo folder in my OneDrive"*. It copies the fictional sample files into a new **Media Plans** folder in your OneDrive. Then *"Start a new media plan for Bramble Bots"*, and check the plan appears under `Media Plans/Clients/Bramble Bots/Plans` in OneDrive.

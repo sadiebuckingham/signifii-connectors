@@ -20,9 +20,10 @@
 
 - Ready to send to prospects: renamed **Signifii Media Planner (demo)**, with a short data note built in (fictional demo data; use files without personal data on OneDrive; nothing kept). **One link per prospect** (`PROSPECT_LINKS`), each switchable off, with last-used shown at `/admin/links`.
 - The server logs at start-up whether Microsoft sign-in is on, and which setting is missing.
+- Microsoft sign-in confirmed working (app "Signifii" in the signifii.com directory, multitenant + personal accounts). The signifii.com account itself has no OneDrive licence, so OneDrive testing uses a personal account.
 - 60 tests.
 
-**To fix before sending:** Chrome flags `signifii-demos.onrender.com` as a "Dangerous site" (likely because it sends people to a Microsoft sign-in from a shared hosting address). Fix: own domain (e.g. `demos.signifii.com`) on Render, then update `PUBLIC_URL` and add the new return address in the Microsoft app.
+**Fixed (3 Nov):** own address `https://demos.signifii.com` (Squarespace DNS → Render), `PUBLIC_URL` switched. Chrome had flagged `signifii-demos.onrender.com` as a "Dangerous site" (likely because it sends people to a Microsoft sign-in from a shared hosting address). Fix: own domain (e.g. `demos.signifii.com`) on Render, then update `PUBLIC_URL` and add the new return address in the Microsoft app.
 
 **To delete (Sadie):** Render Postgres `signifii-demos-db` (not used) and the old `media-plan-connector` service.
 
