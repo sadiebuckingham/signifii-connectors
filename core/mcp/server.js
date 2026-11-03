@@ -40,6 +40,9 @@ export function createApp(connectors) {
     ? microsoftOAuth({ publicUrl: E.PUBLIC_URL, secret: E.OAUTH_SECRET, clientId: E.MS_CLIENT_ID, clientSecret: E.MS_CLIENT_SECRET, tenant: E.MS_TENANT || "common" })
     : null;
   if (oauth) app.use(oauth.router);
+  // Say at start-up whether sign-in is on, and which setting is missing (names only, never values).
+  const missing = ["MS_CLIENT_ID", "MS_CLIENT_SECRET", "OAUTH_SECRET", "PUBLIC_URL"].filter((k) => !E[k]);
+  console.log(oauth ? "Microsoft sign-in: ON" : `Microsoft sign-in: OFF (missing ${missing.join(", ")})`);
   ctx.signInEnabled = Boolean(oauth);
 
   for (const c of connectors) {
