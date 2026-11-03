@@ -25,6 +25,8 @@
 
 **Fixed (3 Nov):** own address `https://demos.signifii.com` (Squarespace DNS → Render), `PUBLIC_URL` switched. Chrome had flagged `signifii-demos.onrender.com` as a "Dangerous site" (likely because it sends people to a Microsoft sign-in from a shared hosting address). Fix: own domain (e.g. `demos.signifii.com`) on Render, then update `PUBLIC_URL` and add the new return address in the Microsoft app.
 
+**To do after the trial:** replace the Microsoft client secret (Entra → Signifii → Certificates & secrets → new secret, update `MS_CLIENT_SECRET` in Render, delete the old one): the current one was shared in a chat on 3 Nov.
+
 **To delete (Sadie):** Render Postgres `signifii-demos-db` (not used) and the old `media-plan-connector` service.
 
 ## Tue 3 Nov 2026 (started Mon evening)
