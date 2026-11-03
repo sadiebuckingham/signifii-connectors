@@ -10,10 +10,18 @@ import { createService } from "../../connectors/media-plan/service.js";
 // A pretend OneDrive (Microsoft Graph by path), held in memory.
 function fakeGraph() {
   const files = new Map();
+  const folders = new Set();
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     calls.push(url);
     if (init.headers?.Authorization !== "Bearer GOOD") return new Response("", { status: 401 });
+    if (init.method === "POST") {
+      const parentPath = String(url).includes("/root/children") ? "" : decodeURIComponent(String(url).match(/root:\/(.+?):\/children/)[1]);
+      const name = JSON.parse(init.body).name;
+      const full = parentPath ? `${parentPath}/${name}` : name;
+      if (folders.has(full)) return Response.json({ error: { code: "nameAlreadyExists" } }, { status: 409 });
+      folders.add(full); return Response.json({}, { status: 201 });
+    }
     const m = String(url).match(/root:\/(.+?)(?::(\/.*))?$/);
     const p = decodeURIComponent(m[1].split("/").map(decodeURIComponent).join("/"));
     const op = m[2] || "";
@@ -24,9 +32,13 @@ function fakeGraph() {
       if (!names.size) return new Response("", { status: 404 });
       return Response.json({ value: [...names].map(([name, isFolder]) => (isFolder ? { name, folder: {} } : { name, file: {}, size: files.get(prefix + name).length, lastModifiedDateTime: "2026-11-03T10:00:00Z" })) });
     }
-    if (op === "/content" && init.method === "PUT") { files.set(p, Buffer.from(init.body)); return Response.json({}, { status: 201 }); }
+    if (op === "/content" && init.method === "PUT") {
+      const parent = p.split("/").slice(0, -1).join("/");
+      if (!folders.has(parent)) return Response.json({ error: { code: "invalidRequest", message: "parent missing" } }, { status: 400 });
+      files.set(p, Buffer.from(init.body)); return Response.json({}, { status: 201 });
+    }
     if (op === "/content") return files.has(p) ? new Response(files.get(p)) : new Response("", { status: 404 });
-    const isFolder = [...files.keys()].some((k) => k.startsWith(p + "/"));
+    const isFolder = folders.has(p) || [...files.keys()].some((k) => k.startsWith(p + "/"));
     return files.has(p) || isFolder ? Response.json({}) : new Response("", { status: 404 });
   };
   return { files, calls, fetchImpl };

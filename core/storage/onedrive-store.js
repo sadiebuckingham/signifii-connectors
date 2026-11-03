@@ -39,9 +39,32 @@ export class OneDriveStore {
     return Buffer.from(await r.arrayBuffer());
   }
   async exists(p) { const r = await this.#call(this.#url(p)); return r.ok; }
+
+  // Microsoft's own wording for an error, e.g. "nameAlreadyExists: ..." (never file contents).
+  async #why(r) { try { const b = await r.json(); return b?.error ? `${b.error.code}: ${b.error.message}` : `HTTP ${r.status}`; } catch { return `HTTP ${r.status}`; } }
+
+  // Make sure a folder (and every folder above it) exists, creating any that don't.
+  async ensureFolder(folder) {
+    const segs = [this.root, ...String(folder || "").split("/")].filter(Boolean);
+    let parent = "";
+    for (const name of segs) {
+      const here = parent ? `${parent}/${name}` : name;
+      const url = `https://graph.microsoft.com/v1.0/me/drive/root:/${here.split("/").map(encodeURIComponent).join("/")}`;
+      const got = await this.#call(url);
+      if (!got.ok) {
+        const parentUrl = parent ? `https://graph.microsoft.com/v1.0/me/drive/root:/${parent.split("/").map(encodeURIComponent).join("/")}:/children` : "https://graph.microsoft.com/v1.0/me/drive/root/children";
+        const r = await this.#call(parentUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }) });
+        if (!r.ok && r.status !== 409) throw new Error(`OneDrive couldn't create the folder "${here}" (${await this.#why(r)}).`);
+      }
+      parent = here;
+    }
+  }
+
   async write(p, buffer) {
     if (buffer.length > 4 * 1024 * 1024) throw new Error("Files over 4 MB can't be saved yet.");
+    const dir = String(p).split("/").slice(0, -1).join("/");
+    if (!this.known?.has(dir)) { await this.ensureFolder(dir); (this.known ||= new Set()).add(dir); }
     const r = await this.#call(this.#url(p, "/content"), { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: buffer });
-    if (!r.ok) throw new Error(`OneDrive couldn't save "${p}" (${r.status}).`);
+    if (!r.ok) throw new Error(`OneDrive couldn't save "${p}" (${await this.#why(r)}).`);
   }
 }

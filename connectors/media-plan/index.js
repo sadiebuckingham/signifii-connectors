@@ -147,21 +147,23 @@ export default {
     if (S.oneDrive) {
       reg.tool("set_up_demo_folder", {
         title: "Set up the demo folder in my OneDrive",
-        description: "Copy the fictional sample files (Shared data, Rules, Clients/Bramble Bots) into a new 'Media Plans' folder in the signed-in person's OneDrive, so they can try the connector on their own storage. Only if they ask, and only when that folder doesn't exist yet.",
+        description: "Copy the fictional sample files (Shared data, Rules, Clients/Bramble Bots) into a 'Media Plans' folder in the signed-in person's OneDrive, so they can try the connector on their own storage. Only if they ask. Adds missing files only; never overwrites.",
         inputSchema: {},
       }, guard(async () => {
-        if (await S.store.exists("")) return { isError: true, content: [{ type: "text", text: "There's already a 'Media Plans' folder in this OneDrive, so nothing was copied." }] };
-        const copied = [];
+        // Adds only the sample files that aren't there yet; never overwrites anything.
+        const copied = [], kept = [];
         async function walk(rel) {
           for (const e of await readdir(path.join(TEMPLATE, rel), { withFileTypes: true })) {
             const r = rel ? `${rel}/${e.name}` : e.name;
             if (e.name.startsWith(".")) continue;
-            if (e.isDirectory()) await walk(r); else { await S.store.write(r, await readFile(path.join(TEMPLATE, r))); copied.push(r); }
+            if (e.isDirectory()) await walk(r);
+            else if (await S.store.exists(r)) kept.push(r);
+            else { await S.store.write(r, await readFile(path.join(TEMPLATE, r))); copied.push(r); }
           }
         }
         await walk("");
         S.library.forget();
-        return { content: [{ type: "text", text: `Created "Media Plans" in your OneDrive with ${copied.length} fictional sample files:\n${copied.map((c) => `- ${c}`).join("\n")}\nPlans and decisions you make will be saved there.` }] };
+        return { content: [{ type: "text", text: `"Media Plans" in your OneDrive: ${copied.length} fictional sample file(s) added${kept.length ? `, ${kept.length} already there and left untouched` : ""}.\n${copied.map((c) => `- ${c}`).join("\n")}\nPlans and decisions you make will be saved there.` }] };
       }));
     }
 
