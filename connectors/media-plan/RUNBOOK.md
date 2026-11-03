@@ -44,7 +44,7 @@ Target: a demo sent to an external person on **Friday 6 Nov 2026**, added to the
 
 ### Tools in Claude
 Shown as the plan view (card in chat, full plan fullscreen): `start_plan(client)`, `open_plan(plan or client)`, `set_allocation`, `move_budget`.
-Plain tools: `list_clients`, `list_sources`, `get_rates`, `get_audience(band)`, `add_channel`, `remove_channel`, `set_line_audiences`, `set_flighting`, `add_audience_figure`, `remove_audience_figure`, `set_target_bands`, `set_brief_detail`, `write_section`, `compare_options`, `check_plan`, `tick_warning`, `plan_versions`, `restore_version`, `get_plan_link`.
+Plain tools: `record_decision`, `list_decisions`, `list_clients`, `list_sources`, `get_rates`, `get_audience(band)`, `add_channel`, `remove_channel`, `set_line_audiences`, `set_flighting`, `add_audience_figure`, `remove_audience_figure`, `set_target_bands`, `set_brief_detail`, `write_section`, `compare_options`, `check_plan`, `tick_warning`, `plan_versions`, `restore_version`, `get_plan_link`.
 
 Claude passes references only: channel names, rate and figure IDs, and the planner's own amounts or percentages. The engine (`connectors/media-plan/engine.js`) does the sums in whole pence, calculates shares and delivery from the rate card, refuses weeks outside the campaign window, refuses to split age bands, and checks written text (length, figures not in the plan, placeholders, claims about what children think or feel). Every change is saved as a version with a note, and the checks rerun.
 
@@ -52,6 +52,10 @@ Claude passes references only: channel names, rate and figure IDs, and the plann
 - `/p/<plan link token>` – read-only plan, one unguessable link per plan (`get_plan_link`).
 - `/admin/media-plan/sources` – reading reports (admin password; add `?reread=1` to re-read the folder).
 - `/admin/host-reports` – how Claude displayed the view on each device (admin password).
+- `/admin/media-plan/reset` – reset the demo: deletes all plans and decisions and restores the sample files (admin password).
+
+### Where things are saved
+Everything is saved in the client's folder, never on our side: plans in `Clients/<client>/Plans/<plan id>/` (a version file per change plus a readable copy), agreed decisions in `Rules/decisions.xlsx`. For the demo the "client folder" is a working copy on the server, wiped on every deploy. Every time a plan is shown, each figure is re-read from its source file; changes are flagged, missing sources fail check B4.
 
 ## The reader: rules it follows
 
@@ -87,7 +91,7 @@ Server on `http://localhost:3000`. Without `CONNECTOR_TOKEN` (and not in product
 | `ADMIN_PASSWORD` | Admin pages (any username) |
 | `PUBLIC_URL` | Public base URL |
 | `MEDIA_PLANS_ROOT` | Optional: another "Media Plans" folder on disk |
-| `DATABASE_URL` | Postgres (from Wednesday) |
+| `DATA_DIR` | Where the demo client folder's working copy lives (default `.data`) |
 
 ## Auth
 
@@ -104,7 +108,7 @@ Push to `main` → Render auto-deploys `signifii-demos`. Roll back: Render → `
 | Item | Plan | Cost |
 |---|---|---|
 | `signifii-demos` web service | Starter | ~$7 |
-| `signifii-demos-db` Postgres | Basic 256 MB, 1 GB disk | ~$6–7 |
+| `signifii-demos-db` Postgres | not used, to delete | ~$6–7 until deleted |
 | Old `media-plan-connector` service | Starter | ~$7 until deleted |
 
 ## Spike findings (claude.ai web, 2 Nov)

@@ -4,6 +4,9 @@ import path from "node:path";
 import { readDocument } from "../../core/sources/documents.js";
 import { readRulesSheet } from "../../core/checks/rules-sheet.js";
 import { newId, newToken } from "../../core/versions/doc-store.js";
+import { FolderDocStore } from "../../core/versions/folder-doc-store.js";
+import { readDecisions, appendDecision } from "../../core/checks/decisions-sheet.js";
+import { DECISION_TYPES, decisionTypeOf, validateDecision, describeDecision } from "./decisions.js";
 import { readBriefFacts } from "./brief.js";
 import { ruleTypeOf } from "./rules.js";
 import { runPlanChecks } from "./checks.js";
@@ -18,26 +21,48 @@ const OPS = {
   write_section: E.writeSection,
 };
 
-export function createService({ store, library, docs, publicUrl = "" }) {
+// renderFile(vm) -> HTML of the plan as a standalone page, saved next to its versions.
+export function createService({ store, library, publicUrl = "", renderFile = null }) {
   const clientsFolder = config.folders.clients;
+  // Plans live in the client's own folder: Clients/<client>/Plans/<plan id>/v0001.json ...
+  const docs = new FolderDocStore(store, {
+    parentOf: (doc) => `${clientsFolder}/${doc.client}/Plans`,
+    parents: async () => (await store.list(clientsFolder)).filter((f) => f.isFolder).map((f) => `${f.path}/Plans`),
+  });
+  const decisionsFile = config.folders.decisionsFile;
+
+  async function decisions() {
+    if (!(await store.exists(decisionsFile))) return { decisions: [], problems: [] };
+    return readDecisions(await store.read(decisionsFile), path.posix.basename(decisionsFile), decisionTypeOf);
+  }
 
   async function rules() {
     const p = config.folders.rulesFile;
     if (!(await store.exists(p))) return { rules: [], problems: [`No ${p} found, so only the built-in checks run.`] };
     return readRulesSheet(await store.read(p), path.posix.basename(p), ruleTypeOf);
   }
-  async function ctx() {
-    const values = await library.values();
-    return { values, valuesById: new Map(values.map((v) => [E.valueId(v), v])) };
+  async function ctx({ fresh = false } = {}) {
+    const values = fresh ? (await library.load({ force: true })).values : await library.values();
+    return { values, valuesById: new Map(values.map((v) => [E.valueId(v), v])), decisions: (await decisions()).decisions };
   }
   const link = (plan) => (publicUrl ? `${publicUrl}/p/${plan.linkToken}` : `/p/${plan.linkToken}`);
 
-  async function present(plan, message) {
+  // Show a plan: go back to the folder, re-read every referenced figure, run every check.
+  async function present(saved, message) {
     const { rules: sheetRules, problems } = await rules();
-    const checkRun = runPlanChecks(plan, sheetRules);
-    const { values } = await ctx();
-    const vm = viewModel(plan, { checkRun, values });
-    return { plan, vm, checkRun, message, rulesProblems: problems, link: link(plan) };
+    const c = await ctx({ fresh: true });
+    const { plan, drift } = E.refreshFromSources(saved, c.valuesById);
+    const checkRun = runPlanChecks(plan, sheetRules, { drift });
+    const vm = viewModel(plan, { checkRun, values: c.values, decisions: c.decisions, drift });
+    return { plan, vm, checkRun, drift, message, rulesProblems: problems, link: link(plan) };
+  }
+
+  // Save a version into the client's folder, plus a readable copy of the plan.
+  async function saveVersion(id, doc, note, { create = false } = {}) {
+    const saved = create ? await docs.create(id, doc, note) : await docs.save(id, doc, note);
+    const r = await present(saved, null);
+    if (renderFile) await docs.attach(id, `${saved.client} - ${saved.brief.facts.campaign?.value || "media plan"} (${id}).html`.replace(/[\\/:*?"<>|]/g, "-"), Buffer.from(renderFile(r.vm)));
+    return saved;
   }
 
   async function clientFolders() {
@@ -75,7 +100,7 @@ export function createService({ store, library, docs, publicUrl = "" }) {
       const { facts, missing } = readBriefFacts(doc);
       const id = `${E.slug(c.name)}-${newId()}`;
       let plan = E.createPlan({ id, client: c.name, briefDoc: doc, facts, missing, linkToken: newToken() });
-      plan = await docs.create(id, plan, `Started from ${b.name}`);
+      plan = await saveVersion(id, plan, `Started from ${b.name}`, { create: true });
       const found = Object.keys(facts);
       return present(plan, `Started plan ${id} for ${c.name} from "${b.name}". Read from the brief: ${found.join(", ") || "nothing"}.${missing.length ? ` Still needed (ask the planner): ${missing.map((m) => `${m.ask} (${m.why})`).join(" ")}` : ""}`);
     },
@@ -102,7 +127,7 @@ export function createService({ store, library, docs, publicUrl = "" }) {
       const plan = await this.getPlan(planId);
       const c = await ctx();
       const { plan: next, message } = fn(plan, args, c);
-      const saved = await docs.save(planId, next, note || message);
+      const saved = await saveVersion(planId, next, note || message);
       return present(saved, message);
     },
 
@@ -113,7 +138,7 @@ export function createService({ store, library, docs, publicUrl = "" }) {
       if (!r) throw new E.PlanError(`No check "${rule_id}".`);
       if (r.status !== "warn") throw new E.PlanError(`Check ${rule_id} is "${r.status}", not a warning, so it can't be ticked.`);
       const { plan: next, message } = E.tickWarning(plan, { rule_id, name }, r.message);
-      return present(await docs.save(planId, next, `Warning ${rule_id} ticked by ${name}`), message);
+      return present(await saveVersion(planId, next, `Warning ${rule_id} ticked by ${name}`), message);
     },
 
     async rates({ search, include_hidden = false } = {}) {
@@ -139,7 +164,7 @@ export function createService({ store, library, docs, publicUrl = "" }) {
       return [...rows.values()].filter((r) => r.rates.length).map((r) => ({ ...r, notes: [...r.notes] }));
     },
 
-    async audience({ band, search }) { const { values } = await ctx(); return E.queryAudience(values, { band, search }); },
+    async audience({ band, search }) { const c = await ctx({ fresh: true }); return E.queryAudience(c.values, { band, search }, c.decisions); },
 
     async compare(planId, scenarios) {
       const base = await this.getPlan(planId);
@@ -163,7 +188,30 @@ export function createService({ store, library, docs, publicUrl = "" }) {
     },
 
     async versions(planId) { await this.getPlan(planId); return docs.versions(planId); },
-    async restore(planId, version) { const p = await docs.restore(planId, version, `Restored version ${version}`); return present(p, `Restored version ${version} as a new version ${p.version}.`); },
+    async restore(planId, version) {
+      const old = await docs.get(planId, version);
+      if (!old) throw new E.PlanError(`Version ${version} of "${planId}" doesn't exist.`);
+      const p = await saveVersion(planId, old, `Restored version ${version}`);
+      return present(p, `Restored version ${version} as a new version ${p.version}.`);
+    },
+
+    async listDecisions() { return decisions(); },
+
+    // Save a decision the planner agreed in chat as a rule in the client's folder.
+    async recordDecision({ type, applies_to, use, agreed_by, why }) {
+      if (!agreed_by) throw new E.PlanError("Give the name of the person agreeing it.");
+      const { decisions: existing } = await decisions();
+      const problem = validateDecision({ type, applies_to, use }, existing);
+      if (problem) throw new E.PlanError(problem);
+      const t = DECISION_TYPES.find((d) => d.code === type);
+      const id = `D${existing.length + 1}`;
+      const buf = await appendDecision((await store.exists(decisionsFile)) ? await store.read(decisionsFile) : null,
+        { id, typeLabel: t.label, appliesTo: String(applies_to).trim(), use: String(use).trim(), agreedBy: agreed_by, date: new Date().toISOString().slice(0, 10), why },
+        { title: "LITTLE LANTERN MEDIA - AGREED DECISIONS (FICTIONAL DEMO DATA)", typeLabels: DECISION_TYPES.map((d) => d.label) });
+      await store.write(decisionsFile, buf);
+      const saved = (await decisions()).decisions.find((d) => d.id === id);
+      return { decision: saved, message: `Saved as ${describeDecision(saved)} in ${decisionsFile}: ${t.label.replace(/^\d+ - /, "")}: ${saved.appliesTo} → ${saved.use}. It applies from now on, in every plan, until someone switches it off in that sheet.` };
+    },
     async byToken(token) { return (await docs.list()).find((p) => p.linkToken === token) || null; },
     present, link,
   };

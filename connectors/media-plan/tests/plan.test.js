@@ -6,17 +6,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { FsStore } from "../../../core/storage/fs-store.js";
 import { SourceLibrary } from "../../../core/sources/library.js";
-import { FileDocStore } from "../../../core/versions/doc-store.js";
+import { cpSync, existsSync, readdirSync } from "node:fs";
+import ExcelJS from "exceljs";
 import { readDocument } from "../../../core/sources/documents.js";
 import { createService } from "../service.js";
 import { readBriefFacts } from "../brief.js";
 import { PlanError } from "../engine.js";
 
-const ROOT = fileURLToPath(new URL("../../../sample-data/media-plan/Media Plans", import.meta.url));
+const SAMPLE = fileURLToPath(new URL("../../../sample-data/media-plan/Media Plans", import.meta.url));
+// a throwaway copy of the client folder, so tests can see what gets saved into it
+const ROOT = path.join(mkdtempSync(path.join(os.tmpdir(), "client-")), "Media Plans");
+cpSync(SAMPLE, ROOT, { recursive: true });
 let svc, id, rates;
-const store = new FsStore(ROOT, { readOnly: true });
+const store = new FsStore(ROOT);
+const library = new SourceLibrary(store, "Shared data");
 before(async () => {
-  svc = createService({ store, library: new SourceLibrary(store, "Shared data"), docs: new FileDocStore(mkdtempSync(path.join(os.tmpdir(), "plans-"))) });
+  svc = createService({ store, library, renderFile: (vm) => `<html>${vm.client}</html>` });
   const r = await svc.startPlan({ client: "Bramble Bots" });
   id = r.plan.id;
   rates = await svc.rates();
@@ -142,4 +147,67 @@ test("versions are kept and can be restored", async () => {
   const r = await svc.restore(id, 1);
   assert.equal(r.plan.lines.length, 0);
   assert.equal(r.plan.version, vs.length + 1);
+});
+
+test("plans are saved as files in the client's own Plans folder, with every version and a readable copy", async () => {
+  const folder = path.join(ROOT, "Clients", "Bramble Bots", "Plans", id);
+  const files = readdirSync(folder);
+  assert.ok(files.includes("v0001.json"));
+  assert.ok(files.filter((f) => /^v\d{4}\.json$/.test(f)).length > 5);
+  assert.ok(files.some((f) => f.endsWith(".html")), "readable copy of the plan saved next to the versions");
+  assert.ok(!existsSync(path.join(SAMPLE, "Clients", "Bramble Bots", "Plans", id)), "the original sample folder is untouched");
+});
+
+test("the brief's own objective is shown, and passed to Claude, until the short version is written", async () => {
+  const fresh = await svc.startPlan({ client: "Bramble Bots" });
+  assert.equal(fresh.vm.objective.fromBrief, true);
+  assert.match(fresh.vm.objective.text, /wish lists/);
+});
+
+test("a decision agreed once is saved in the folder and reused automatically", async () => {
+  await assert.rejects(svc.recordDecision({ type: "band_substitute", applies_to: "4-6", use: "6-8", agreed_by: "Jo" }), /doesn't contain 4-6/);
+  const r = await svc.recordDecision({ type: "band_substitute", applies_to: "4-6", use: "4-9", agreed_by: "Jo", why: "No source reports 4-6" });
+  assert.equal(r.decision.id, "D1");
+  assert.ok(existsSync(path.join(ROOT, "Rules", "decisions.xlsx")));
+  await assert.rejects(svc.recordDecision({ type: "band_substitute", applies_to: "4-6", use: "4-9", agreed_by: "Jo" }), /already covers/);
+  const q = await svc.audience({ band: "4-6", search: "Pip TV" });
+  assert.ok(q.messages.some((m) => /Agreed decision D1, agreed by Jo/.test(m)));
+  assert.match(q.rows[0].match, /allowed by decision D1/);
+  // a new plan uses it without asking again, and labels the band honestly
+  const p2 = (await svc.startPlan({ client: "Bramble Bots" })).plan.id;
+  const add = await svc.apply(p2, "add_audience_figure", { value_id: q.rows[0].id, for_band: "4-6" });
+  assert.match(add.plan.figures[0].audienceLabel, /4-9, used for 4-6 by decision D1, agreed by Jo/);
+});
+
+test("a decision switched off in the sheet stops applying", async () => {
+  const f = path.join(ROOT, "Rules", "decisions.xlsx");
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(f);
+  const ws = wb.getWorksheet("Decisions"); ws.getCell(ws.rowCount, 8).value = "No"; await wb.xlsx.writeFile(f);
+  const q = await svc.audience({ band: "4-6", search: "Pip TV" });
+  assert.ok(!q.messages.some((m) => /D1/.test(m)));
+  assert.match(q.rows[0].match, /only with the planner's agreement/);
+});
+
+test("every figure is re-read from its file when the plan is shown; changes and missing sources are flagged", async () => {
+  const p = (await svc.startPlan({ client: "Bramble Bots" })).plan.id;
+  const tv = (await svc.audience({ band: "4-9", search: "Pip TV" })).rows[0];
+  await svc.apply(p, "add_audience_figure", { value_id: tv.id, for_band: "4-9" });
+  let r = await svc.open(p);
+  assert.equal(r.checkRun.results.find((c) => c.ruleId === "B4").status, "pass");
+  // someone edits the source spreadsheet
+  const file = path.join(ROOT, "Shared data", "01_tv_audiences_wk42-45.xlsx");
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.readFile(file);
+  const ref = tv.id.split("::")[2];
+  const before = wb.worksheets[0].getCell(ref).value;
+  wb.worksheets[0].getCell(ref).value = 999; await wb.xlsx.writeFile(file);
+  r = await svc.open(p);
+  const b4 = r.checkRun.results.find((c) => c.ruleId === "B4");
+  assert.equal(b4.status, "warn"); assert.match(b4.message, new RegExp(`was "${before}", now "999"`));
+  assert.match(r.vm.figures[0].value, /999 .*\(was 203\)/);
+  // the cell is emptied
+  wb.worksheets[0].getCell(ref).value = null; await wb.xlsx.writeFile(file);
+  r = await svc.open(p);
+  assert.equal(r.checkRun.results.find((c) => c.ruleId === "B4").status, "fail");
+  assert.equal(r.vm.figures[0].value, "Source missing");
+  wb.worksheets[0].getCell(ref).value = before; await wb.xlsx.writeFile(file);
 });

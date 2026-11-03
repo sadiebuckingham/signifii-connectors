@@ -6,6 +6,14 @@ import { parseAudience, compareBand, bandsOverlap } from "../../core/sources/aud
 import { checkSlotText } from "../../core/checks/text.js";
 import { weeksInWindow } from "./rules.js";
 import { config } from "./config.js";
+import { describeDecision } from "./decisions.js";
+
+// An agreed alias: this value's audience label counts as one of the agency's audiences.
+function aliasFor(v, want, decisions) {
+  const labels = (v.audience?.labels || []).map((l) => l.toLowerCase());
+  return decisions.find((d) => d.usable && d.type === "audience_alias" && canonicalBand(d.use)?.label?.toLowerCase() === String(want.label).toLowerCase()
+    && labels.some((l) => l === d.appliesTo.toLowerCase() || l.endsWith(`› ${d.appliesTo.toLowerCase()}`))) || null;
+}
 
 export class PlanError extends Error {}
 const fail = (msg) => { throw new PlanError(msg); };
@@ -243,14 +251,14 @@ const isReach = (v) => REACH_METRIC.test(v.metric) && !NOT_REACH.test(v.metric) 
 const matchesSearch = (v, s) => !s || `${v.file} ${v.sheet} ${v.entity || ""} ${v.column} ${v.metric} ${(v.audience?.labels || []).join(" ")} ${Object.values(v.attributes || {}).join(" ")}`.toLowerCase().includes(String(s).toLowerCase());
 
 // Find audience figures for a band. Never splits, scales or averages.
-export function queryAudience(values, { band, search }) {
+export function queryAudience(values, { band, search }, decisions = []) {
   const want = canonicalBand(band);
   if (!want) fail(`"${band}" isn't an age band or audience the connector knows. Try e.g. "4-6", "7-9", "4-9" or "parents".`);
   const pool = values.filter((v) => !v.hidden && isReach(v) && matchesSearch(v, search));
   const exact = [], wider = [], partial = [], typeMatch = [];
   for (const v of pool) {
     const a = v.audience;
-    if (want.type) { if (a?.type === want.type) typeMatch.push(v); continue; }
+    if (want.type) { if (a?.type === want.type || aliasFor(v, want, decisions)) typeMatch.push(v); continue; }
     if (!a?.age || a.type === "parents") continue;
     const c = compareBand(a.age, want);
     if (c.exact) exact.push(v); else if (c.wider) wider.push(v); else if (bandsOverlap(a.age, want)) partial.push(v);
@@ -261,6 +269,14 @@ export function queryAudience(values, { band, search }) {
     return [...g].map(([k, vs]) => ({ source: k, bands: [...new Set(vs.map((v) => v.audience?.age?.label || v.audience?.labels?.join(" ")))], count: vs.length }));
   };
   const messages = [];
+  // an agreed decision: when this band isn't reported, use a named wider band (labelled as itself)
+  const sub = !want.type && !exact.length ? decisions.find((d) => d.usable && d.type === "band_substitute" && canonicalBand(d.appliesTo)?.label === want.label) : null;
+  if (sub) {
+    const use = canonicalBand(sub.use);
+    const agreed = wider.filter((v) => v.audience?.age && compareBand(v.audience.age, use).exact);
+    messages.push(`Agreed ${describeDecision(sub)}: when ${want.label} isn't reported, use ${use.label}, shown as ${use.label}.`);
+    wider.splice(0, wider.length, ...agreed);
+  }
   if (!want.type && !exact.length) {
     for (const s of bySource(wider)) messages.push(`${s.source} reports ${s.bands.join(", ")} only. It can't be split to ${want.label}.`);
     for (const s of bySource(partial)) messages.push(`${s.source} reports ${s.bands.join(", ")}, which overlap ${want.label} but aren't the same band. Not used.`);
@@ -269,29 +285,32 @@ export function queryAudience(values, { band, search }) {
   const rows = (want.type ? typeMatch : exact.length ? exact : wider).slice(0, 60).map((v) => ({
     id: valueId(v), source: `${v.file} › ${v.sheet} ${v.ref}`, entity: v.entity, metric: v.metric, unit: v.unit, audience: v.audience?.labels?.join(" › "),
     band: v.audience?.age?.label || null, period: v.period || v.tablePeriod?.original || null, value: v.kind === "none" ? null : v.value, original: v.original,
-    match: want.type ? "audience" : exact.length ? "exact" : "wider band, only with the planner's agreement",
+    match: want.type ? (aliasFor(v, want, decisions) ? `audience, by ${describeDecision(aliasFor(v, want, decisions))}` : "audience") : exact.length ? "exact" : sub ? `wider band, allowed by ${describeDecision(sub)}` : "wider band, only with the planner's agreement",
     notes: keyNotes(v).slice(0, 3), flags: v.flags,
   }));
   return { band: want.label, exactCount: exact.length, widerCount: wider.length, messages, rows, total: (want.type ? typeMatch : exact.length ? exact : wider).length };
 }
 
 export function addAudienceFigure(plan, { value_id, for_band, accept_wider = false }, ctx) {
+  const decisions = ctx.decisions || [];
   const v = ctx.valuesById.get(value_id);
   if (!v) fail(`No source value with ID "${value_id}". Use get_audience to find figure IDs.`);
   if (v.hidden) fail(`${value_id} is hidden in its file and isn't used in plans.`);
   if (!isReach(v)) fail(`${value_id} is "${v.metric}", which isn't an audience figure.`);
   if (v.kind === "none") fail(`${value_id} has no value ("${v.original}": ${v.reason}). It can't go in the plan as a figure.`);
-  let usedFor = null;
+  let usedFor = null, decisionUsed = null;
   if (for_band) {
     const want = canonicalBand(for_band);
     if (want?.age || want?.from != null) {
       const c = compareBand(v.audience?.age, want);
-      if (!c.exact && !(c.wider && accept_wider)) fail(c.wider ? `This figure is for ${v.audience.age.label}, not ${want.label}. It can't be split to ${want.label}. Use it only if the planner agrees to show the wider band: then pass accept_wider=true and it will be labelled "${v.audience.age.label}, used for ${want.label} at planner's request".` : `This figure is for ${v.audience?.age?.label || "a different audience"}, which doesn't contain ${want.label}.`);
+      const sub = c.wider ? decisions.find((d) => d.usable && d.type === "band_substitute" && canonicalBand(d.appliesTo)?.label === want.label && canonicalBand(d.use)?.label === v.audience.age.label) : null;
+      if (sub) decisionUsed = sub;
+      if (!c.exact && !(c.wider && (accept_wider || sub))) fail(c.wider ? `This figure is for ${v.audience.age.label}, not ${want.label}. It can't be split to ${want.label}. Use it only if the planner agrees to show the wider band: then pass accept_wider=true and it will be labelled "${v.audience.age.label}, used for ${want.label} at planner's request".` : `This figure is for ${v.audience?.age?.label || "a different audience"}, which doesn't contain ${want.label}.`);
       if (c.wider) usedFor = want.label;
     }
   }
   if (plan.figures.some((f) => f.id === value_id)) fail("That figure is already in the plan.");
-  const audienceLabel = (v.audience?.labels || []).join(" › ") + (usedFor ? ` (${v.audience.age.label}, used for ${usedFor} at planner's request)` : "");
+  const audienceLabel = (v.audience?.labels || []).join(" › ") + (usedFor ? ` (${v.audience.age.label}, used for ${usedFor} ${decisionUsed ? `by ${describeDecision(decisionUsed)}` : "at planner's request"})` : "");
   const f = { id: value_id, entity: v.entity || v.sheet, metric: v.metric, unit: v.unit, audienceLabel, ageLabel: v.audience?.age?.label || null, value: v.value, original: v.original, period: v.period || v.tablePeriod?.original || null,
     source: srcOf(v), notes: keyNotes(v).slice(0, 4), flags: v.flags, usedFor, scaleNote: /000s?/.test(v.unit || "") };
   const next = structuredClone(plan); next.figures.push(f);
@@ -335,4 +354,32 @@ export function tickWarning(plan, { rule_id, name }, currentMessage) {
   if (!name) fail("Give the name of the person ticking it.");
   const next = structuredClone(plan); next.ticks[rule_id] = { by: name, at: new Date().toISOString(), message: currentMessage };
   return { plan: next, message: `Ticked by ${name}.` };
+}
+
+// ---------------------------------------------------------------- re-check against the folder
+// A saved plan keeps references (file · sheet · cell) and the value seen when it
+// was added. Every time the plan is shown, each reference is read again from the
+// folder: the plan uses what the file says now, and any difference is flagged.
+export function refreshFromSources(plan, valuesById) {
+  const p = structuredClone(plan);
+  const drift = [];
+  const where = (s) => `${s.file} · ${s.sheet} · ${s.ref}`;
+  for (const f of p.figures) {
+    const v = valuesById.get(f.id);
+    if (!v || v.kind === "none") { drift.push({ kind: "missing", what: `${f.entity} ${f.metric}`, where: where(f.source), was: f.original }); f.sourceStatus = "missing"; continue; }
+    if (String(v.original) !== String(f.original)) {
+      drift.push({ kind: "changed", what: `${f.entity} ${f.metric}`, where: where(f.source), was: f.original, now: v.original });
+      f.changedFrom = f.original; f.value = v.value; f.original = v.original; f.sourceStatus = "changed";
+    } else f.sourceStatus = "same";
+  }
+  for (const l of p.lines) {
+    if (!l.rate?.id) continue;
+    const v = valuesById.get(l.rate.id);
+    if (!v) { drift.push({ kind: "missing", what: `${l.channel} rate`, where: where(l.rate.source), was: l.rate.original }); l.rate = { ...l.rate, kind: "none", value: null, original: "source missing", sourceStatus: "missing" }; continue; }
+    if (String(v.original) !== String(l.rate.original)) {
+      drift.push({ kind: "changed", what: `${l.channel} rate`, where: where(l.rate.source), was: l.rate.original, now: v.original });
+      l.rate = { ...l.rate, kind: v.kind, value: v.value, min: v.min, max: v.max, original: v.original, changedFrom: l.rate.original, sourceStatus: "changed" };
+    }
+  }
+  return { plan: p, drift };
 }

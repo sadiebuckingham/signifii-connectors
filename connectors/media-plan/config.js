@@ -3,6 +3,7 @@ export const config = {
   folders: {
     sharedData: "Shared data",
     rulesFile: "Rules/rules.xlsx",
+    decisionsFile: "Rules/decisions.xlsx",  // decisions agreed in Claude, editable by the agency
     clients: "Clients",            // Clients/<client>/Briefs and /Plans
   },
   // The agency's canonical age bands. A source band is used for one of these

@@ -4,8 +4,8 @@ import { runChecks } from "../../core/checks/engine.js";
 import { evaluators, BUILT_IN_RULES } from "./rules.js";
 import { checkModel } from "./engine.js";
 
-export function runPlanChecks(plan, sheetRules) {
-  const subject = checkModel(plan);
+export function runPlanChecks(plan, sheetRules, { drift } = {}) {
+  const subject = { ...checkModel(plan), _drift: drift };
   const first = runChecks({ rules: [...sheetRules, ...BUILT_IN_RULES], evaluators, subject });
   const ticks = {};
   for (const r of first.results) {

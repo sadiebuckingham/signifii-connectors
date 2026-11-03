@@ -9,7 +9,8 @@ Update this whenever anything is created or changed on Render, GitHub or Sentry.
 | Media Plan connector URL | `https://signifii-demos.onrender.com/mcp/media-plan/<CONNECTOR_TOKEN>` | Token in Render env + password manager |
 | Media Plan web plan links | `https://signifii-demos.onrender.com/p/<plan link token>` | One unguessable link per plan (`get_plan_link`) |
 | Media Plan admin | `https://signifii-demos.onrender.com/admin/media-plan/sources` | `ADMIN_PASSWORD` |
-| Demo database | Render Postgres `signifii-demos-db` (`dpg-dbk9hg49v7es73c48id0-a`), Frankfurt, Basic 256 MB, Postgres 17 | Not used by code yet (saving, Wednesday). No outside access (empty IP allow list) |
+| Demo database | Render Postgres `signifii-demos-db` (`dpg-dbk9hg49v7es73c48id0-a`) | **Not used: delete it** (Sadie). Decision 3 Nov: everything is saved in the client's folder, no database |
+| Demo client folder | On the `signifii-demos` server: a working copy of `sample-data/media-plan/Media Plans` | Plans and decisions are saved here. Wiped on every deploy, and by Reset (`/admin/media-plan/reset`) |
 | Old spike service | Render `media-plan-connector` (`srv-dbk6p03bc2fs73ej4usg`), Frankfurt, Starter | https://media-plan-connector.onrender.com · no longer used: the connector points at `signifii-demos` (confirmed 2 Nov). **Delete it** (Sadie) |
 | Sentry | Organisation `signifii` (EU, https://signifii.sentry.io), project `signifii-demos` | Server and in-Claude view. `SENTRY_DSN` set in Render. No personal data sent |
 | Microsoft app registration | Not created yet: steps in `docs/microsoft-sign-in-setup.md` | Under `sadie@signifii.com`. Return address `https://signifii-demos.onrender.com/auth/microsoft/callback`. `MS_CLIENT_ID` / `MS_CLIENT_SECRET` go in Render |

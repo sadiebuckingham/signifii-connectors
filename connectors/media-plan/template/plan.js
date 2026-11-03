@@ -67,7 +67,7 @@ export function renderPlan(vm) {
 </section>`);
 
   slides.push(slide(2, "The brief", `<dl class="brief">
-    <div><dt>Objective</dt><dd>${vm.objective?.text ? `${esc(vm.objective.text)}${src(vm.objective.src)}` : missingText("Not written yet")}</dd></div>
+    <div><dt>Objective</dt><dd>${vm.objective?.text ? `${esc(vm.objective.text)}${src(vm.objective.src)}${vm.objective.fromBrief ? ` <span class="nv">(the brief's own wording; the plan's short version isn't written yet)</span>` : ""}` : missingText("Not written yet")}</dd></div>
     <div><dt>Audience</dt><dd>${val(vm.audienceText, "Not stated in the brief")}</dd></div>
     <div><dt>Budget</dt><dd>${val(vm.budget, "Not stated in the brief: ask the planner")}</dd></div>
     <div><dt>Campaign window</dt><dd>${val(vm.window, "Not stated in the brief: ask the planner")}</dd></div>
@@ -75,7 +75,7 @@ export function renderPlan(vm) {
 
   slides.push(slide(3, "Who we're reaching", (vm.figures.length ? `<div class="tw"><table class="t">
     <thead><tr><th>Source</th><th>Audience (as reported)</th><th>Measure</th><th>Period</th><th class="num">Figure</th></tr></thead>
-    <tbody>${vm.figures.map((f) => `<tr><td>${esc(f.entity)}</td><td>${esc(f.audience)}</td><td>${esc(f.metric)}</td><td>${esc(f.period || "")}</td><td class="num">${esc(f.value)}${src(f.src)}</td></tr>`).join("")}</tbody>
+    <tbody>${vm.figures.map((f) => `<tr><td>${esc(f.entity)}</td><td>${esc(f.audience)}</td><td>${esc(f.metric)}</td><td>${esc(f.period || "")}</td><td class="num${f.status === "missing" || f.status === "changed" ? " flagged" : ""}">${esc(f.value)}${src(f.src)}</td></tr>`).join("")}</tbody>
   </table></div>` : `<p>${missingText("No audience figures chosen yet.")}</p>`) +
     (vm.gaps.length ? `<ul class="gaps">${vm.gaps.map((g) => `<li>${esc(g)}</li>`).join("")}</ul>` : "") +
     `<p class="foot-note">Figures are shown exactly as each source reports them. Age bands are never split, scaled or added together.</p>`, vm));

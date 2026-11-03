@@ -11,7 +11,7 @@ const fmtFigure = (f) => {
   return f.unit ? `${shown} (${f.unit})` : shown;
 };
 
-export function viewModel(plan, { checkRun, values = [] } = {}) {
+export function viewModel(plan, { checkRun, values = [], decisions = [], drift = [] } = {}) {
   const d = derive(plan);
   const F = plan.brief.facts;
   const s = (f) => (f ? srcText(f.source) : null);
@@ -20,7 +20,7 @@ export function viewModel(plan, { checkRun, values = [] } = {}) {
     const want = canonicalBand(b);
     if (!want || want.type) continue;
     if (plan.figures.some((f) => f.ageLabel === want.label)) continue;
-    try { const q = queryAudience(values, { band: b }); if (!q.exactCount) gaps.push(...q.messages.slice(0, 3)); } catch { /* unknown band: nothing to say */ }
+    try { const q = queryAudience(values, { band: b }, decisions); if (!q.exactCount) gaps.push(...q.messages.slice(0, 3)); } catch { /* unknown band: nothing to say */ }
   }
   return {
     planId: plan.id, version: plan.version, versionLabel: `v${plan.version ?? 1}`, status: plan.status,
@@ -31,8 +31,13 @@ export function viewModel(plan, { checkRun, values = [] } = {}) {
     contact: F.contact ? { text: F.contact.value, src: s(F.contact) } : null,
     budget: F.budget ? { text: fmtGBP(Math.round(F.budget.value * 100)), src: s(F.budget) } : null,
     audienceText: F.audience ? { text: F.audience.value, src: s(F.audience) } : null,
-    objective: plan.sections.objective ? { text: plan.sections.objective.text, src: `Written in Claude from the brief's objective${F.objective ? ` (${srcText(F.objective.source)})` : ""}` } : null,
-    figures: plan.figures.map((f) => ({ entity: f.entity, audience: f.audienceLabel, metric: f.metric, period: f.period, value: fmtFigure(f), src: srcText(f.source) + (f.notes.length ? ` · Notes: ${f.notes.join(" | ")}` : "") })),
+    objective: plan.sections.objective ? { text: plan.sections.objective.text, src: `Written in Claude from the brief's objective${F.objective ? ` (${srcText(F.objective.source)})` : ""}` }
+      : F.objective ? { text: F.objective.value, src: srcText(F.objective.source), fromBrief: true } : null,
+    figures: plan.figures.map((f) => ({ entity: f.entity, audience: f.audienceLabel, metric: f.metric, period: f.period,
+      value: f.sourceStatus === "missing" ? "Source missing" : fmtFigure(f) + (f.changedFrom ? ` (was ${f.changedFrom})` : ""),
+      status: f.sourceStatus || null,
+      src: (f.sourceStatus === "missing" ? "No longer in the file: " : f.changedFrom ? `Changed in the file since it was added (was "${f.changedFrom}"). Re-read just now: ` : "Re-read from the file just now: ") + srcText(f.source) + (f.notes.length ? ` · Notes: ${f.notes.join(" | ")}` : "") })),
+    sourceChanges: drift,
     gaps,
     lines: d.lines.map((l) => ({
       channel: l.channel, category: l.category,

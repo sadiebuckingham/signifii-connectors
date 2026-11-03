@@ -1,5 +1,20 @@
 # Changelog
 
+## Wed 4 Nov 2026 (started Tue)
+
+**Decided (Sadie, 3 Nov):** everything is saved in the client's own folder. Signifii handles data but doesn't hold it. No database.
+
+**Changed**
+- Plans are saved as files in `Clients/<client>/Plans/<plan id>/`: one file per version (with a note of what changed) and a readable copy of the plan as a web page. The demo uses a working copy of the sample folder; OneDrive uses the same code from Thursday.
+- Re-check against the folder: every time a plan is shown, each figure and rate is re-read from its file. If the file has changed, the plan uses the file's current value and flags it ("999 (was 203)", needs a tick); if the cell or file has gone, it shows "Source missing" and the new built-in check B4 fails.
+- Agreed decisions are saved as rules in `Rules/decisions.xlsx` (who agreed, when, why), next to `rules.xlsx`. Two types: use a named wider age band when the exact one isn't reported (always labelled as itself; never narrower or overlapping), and treat a source's audience label as one of the agency's audiences. Applied automatically in every plan until someone switches them off in the sheet. New tools: `record_decision`, `list_decisions`.
+- The brief's own objective is shown, and passed to Claude, until the short version is written.
+- Source data is held in memory for at most 2 minutes, then read from the folder again.
+- Reset demo: `/admin/media-plan/reset` (admin password) puts the demo folder back to the original sample files.
+- 53 tests.
+
+**To delete (Sadie):** Render Postgres `signifii-demos-db` (not used) and the old `media-plan-connector` service.
+
 ## Tue 3 Nov 2026 (started Mon evening)
 
 **Changed**

@@ -84,3 +84,5 @@ body { font-family: var(--body); color: var(--color-text-primary, #141413); back
 .summary-missing { margin: 10px 0 0; font-size: 13px; color: var(--yellow); }
 .kpis small { font-weight: 600; opacity: .8; }
 .brief dd.num { text-align: left; }
+
+.t td.flagged { color: var(--fail); font-weight: 700; }

@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { FsStore } from "../../core/storage/fs-store.js";
 import { SourceLibrary } from "../../core/sources/library.js";
 import { readingReportsPage } from "../../core/sources/report-html.js";
-import { FileDocStore } from "../../core/versions/doc-store.js";
+import { ensureWorkingCopy, resetWorkingCopy } from "../../core/storage/demo-folder.js";
 import { PlanError } from "./engine.js";
 import { reportError } from "../../core/observability/sentry.js";
 import { createService } from "./service.js";
@@ -16,11 +16,23 @@ import { renderPlan } from "./template/plan.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(here, "../..");
 
-// "Media Plans" folders on our side: the sample folder in the repo (read-only) for now.
-const store = new FsStore(process.env.MEDIA_PLANS_ROOT || path.join(ROOT, "sample-data/media-plan/Media Plans"), { readOnly: true, label: "Demo folders" });
+// The "client folder". For the demo: a working copy of the fictional sample folder,
+// which the connector reads and saves into exactly as it will a client's OneDrive.
+// Everything saved (plans, decisions) lives in that folder; nothing else is kept.
+const TEMPLATE = path.join(ROOT, "sample-data/media-plan/Media Plans");
+const WORK = process.env.MEDIA_PLANS_ROOT || path.join(process.env.DATA_DIR || path.join(ROOT, ".data"), "Media Plans");
+await ensureWorkingCopy(TEMPLATE, WORK);
+const store = new FsStore(WORK, { label: "Demo client folder" });
 const library = new SourceLibrary(store, config.folders.sharedData);
-const docs = new FileDocStore(path.join(process.env.DATA_DIR || path.join(ROOT, ".data"), "media-plans"));
-const service = createService({ store, library, docs, publicUrl: process.env.PUBLIC_URL || "" });
+const PAGE_CSS = readFileSync(path.join(ROOT, "core/mcp/app-shell/shell.css"), "utf8") + readFileSync(path.join(here, "template/plan.css"), "utf8");
+const MARKERS = readFileSync(path.join(ROOT, "core/mcp/app-shell/markers.js"), "utf8").replace("export function", "function");
+const planPage = (vm) => `<!doctype html>
+<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${vm.client} · ${vm.campaign?.text || "Media plan"}</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Nunito:wght@700;800;900&display=swap">
+<style>${PAGE_CSS} body{background:#EDE8DC;} main{max-width:1040px;margin:0 auto;padding:24px 16px;}</style></head>
+<body><main>${renderPlan(vm)}</main><script>${MARKERS}; wireSourceMarkers(document);</script></body></html>`;
+const service = createService({ store, library, publicUrl: process.env.PUBLIC_URL || "", renderFile: planPage });
 
 // ---------- what Claude reads back after each tool
 function planText(r) {
@@ -34,10 +46,18 @@ function planText(r) {
     `Audience figures: ${vm.figures.length}. Sections written: objective ${vm.objective ? "yes" : "no"}, rationale ${vm.rationale.filter((x) => x.text).length}/${vm.lines.length}.`,
     vm.gaps.length ? `Audience gaps: ${vm.gaps.join(" ")}` : "",
     vm.missing.length ? `Still needed from the planner: ${vm.missing.map((m) => m.ask).join(" ")}` : "",
+    briefWords(r.plan),
+    r.drift?.length ? `Source files re-read just now. Changed or missing since added: ${r.drift.map((d) => `${d.what}: ${d.kind === "missing" ? "source missing" : `was "${d.was}", now "${d.now}"`} (${d.where})`).join("; ")}.` : (r.plan.figures.length ? "Source files re-read just now: every figure still matches its file." : ""),
     `Checks: ${s.pass} pass, ${s.warn} warning, ${s.fail} fail, ${s.notRun} not run, ${s.notChecked} not checked.${issues ? `\n${issues}` : ""}`,
     `Web link: ${r.link}`,
     "Don't restate figures yourself; the plan view shows them with their sources.",
   ].filter(Boolean).join("\n");
+}
+// The brief's own words, so Claude can draft the short objective from them (wording only; never figures).
+function briefWords(plan) {
+  const f = plan.brief.facts, out = [];
+  for (const k of ["objective", "audience", "campaign"]) if (f[k]?.value) out.push(`Brief ${k} (${f[k].source?.ref || "given by planner"}): "${f[k].value}"`);
+  return out.length ? `From the brief:\n  ${out.join("\n  ")}` : "";
 }
 const view = (r) => ({ vm: { ...r.vm, checkRun: r.checkRun && { ...r.checkRun, rulesSnapshot: undefined } }, planId: r.plan.id, link: r.link });
 const ok = (r, withView = true) => ({ content: [{ type: "text", text: planText(r) }], ...(withView ? { structuredContent: view(r) } : { structuredContent: { planId: r.plan.id, version: r.plan.version, checks: r.checkRun.summary } }) });
@@ -149,6 +169,22 @@ export default {
     change("write_section", "Write a section", `Write words for a fixed slot: "objective" (max ${config.limits.objective} characters, from the brief's objective) or "rationale:<channel>" (max ${config.limits.rationale}). Rejected if too long, if it has a figure that isn't in the plan, if it has placeholders, or if it says what children think or feel.`,
       { slot: z.string(), text: z.string() }, "write_section");
 
+    reg.tool("record_decision", {
+      title: "Save an agreed decision",
+      description: "Save a decision the planner has just agreed in chat as a rule in the agency's folder (Rules/decisions.xlsx), so it's applied automatically from now on, in every plan, and doesn't depend on anyone remembering it. Only after the planner clearly agrees, with their name. Types: band_substitute (when an age band isn't reported, use a named wider band, always labelled as itself, e.g. applies_to '4-6', use '4-9'); audience_alias (treat a source's audience label as one of our audiences, e.g. applies_to 'HWC (Housewives w/ children)', use 'parents'). Never use it to change a figure.",
+      inputSchema: { type: z.enum(["band_substitute", "audience_alias"]), applies_to: z.string(), use: z.string(), agreed_by: z.string(), why: z.string().optional() },
+    }, guard(async (a) => { const r = await service.recordDecision(a); return { content: [{ type: "text", text: r.message }], structuredContent: { decision: r.decision } }; }));
+
+    reg.tool("list_decisions", {
+      title: "List agreed decisions", annotations: { readOnlyHint: true },
+      description: "List the decisions saved in the agency's Rules/decisions.xlsx: what each covers, who agreed it and when, and whether it's switched on.",
+      inputSchema: {},
+    }, guard(async () => {
+      const { decisions, problems } = await service.listDecisions();
+      const text = decisions.length ? decisions.map((d) => `- ${d.id} [${d.usable ? "ON" : "OFF"}] ${d.typeText}: ${d.appliesTo} → ${d.use} (agreed by ${d.agreedBy || "?"} on ${d.date || "?"})${d.why ? ` · ${d.why}` : ""}`).join("\n") : "No decisions saved yet.";
+      return { content: [{ type: "text", text: text + (problems.length ? `\nNot used: ${problems.join(" ")}` : "") }], structuredContent: { decisions, problems } };
+    }));
+
     reg.tool("compare_options", {
       title: "Compare options",
       description: "Compare the current plan with 2-3 alternative splits side by side, without changing the plan. Each scenario lists allocations ({channel, amount_gbp | share_pct}) and/or moves ({from, to, amount_gbp | share_pct, basis}). Everything is calculated in code, including checks." + DESC_SUFFIX,
@@ -197,27 +233,27 @@ export default {
   },
 
   routes(app, ctx) {
-    const css = readFileSync(path.join(ROOT, "core/mcp/app-shell/shell.css"), "utf8") + readFileSync(path.join(here, "template/plan.css"), "utf8");
-    const markers = readFileSync(path.join(ROOT, "core/mcp/app-shell/markers.js"), "utf8").replace("export function", "function");
     app.get(["/p/:token", "/p/media-plan/:token"], async (req, res) => {
       const plan = await service.byToken(req.params.token);
       if (!plan) return res.status(404).type("text").send("This plan link doesn't exist or has been switched off.");
       const r = await service.present(plan, null);
-      res.set("Cache-Control", "no-store").set("X-Robots-Tag", "noindex").type("html").send(`<!doctype html>
-<html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${r.vm.client} · ${r.vm.campaign?.text || "Media plan"}</title>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Nunito:wght@700;800;900&display=swap">
-<style>${css} body{background:#EDE8DC;} main{max-width:1040px;margin:0 auto;padding:24px 16px;}</style></head>
-<body><main>${renderPlan(r.vm)}</main><script>${markers}; wireSourceMarkers(document);</script></body></html>`);
+      res.set("Cache-Control", "no-store").set("X-Robots-Tag", "noindex").type("html").send(planPage(r.vm));
     });
 
     app.get("/admin/media-plan/sources", ctx.checkAdmin, async (req, res) => {
       const state = await library.load({ force: req.query.reread === "1" });
       res.set("Cache-Control", "no-store").type("html").send(readingReportsPage(state, { title: "Shared data reading report", heading: "Shared data: reading report", folderLabel: `Media Plans/${config.folders.sharedData}` }));
     });
+    // Reset the demo: throw away the working client folder (plans, decisions) and start again from the sample files.
+    app.get("/admin/media-plan/reset", ctx.checkAdmin, (_req, res) => res.type("html").send(`<!doctype html><meta name="viewport" content="width=device-width"><body style="font:16px system-ui;max-width:560px;margin:40px auto;padding:0 16px"><h1>Reset the demo</h1><p>This deletes every plan and agreed decision in the demo folder and puts back the original fictional sample files. It can't be undone.</p><form method="post"><button style="font:inherit;padding:10px 16px">Reset the demo</button></form></body>`));
+    app.post("/admin/media-plan/reset", ctx.checkAdmin, async (_req, res) => {
+      await resetWorkingCopy(TEMPLATE, WORK);
+      library.forget();
+      res.type("html").send('<body style="font:16px system-ui;max-width:560px;margin:40px auto">Done. The demo folder is back to the original sample files.</body>');
+    });
     app.get("/admin/media-plan/sources.json", ctx.checkAdmin, async (req, res) => res.json(await library.load({ force: req.query.reread === "1" })));
   },
 
   // for tests
-  _service: service, _docs: docs,
+  _service: service,
 };

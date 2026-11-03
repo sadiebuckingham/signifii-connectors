@@ -1,13 +1,14 @@
-// Source library: reads every file in one folder of a store, keeps the
-// values and reading reports in memory, and re-reads from scratch on request.
-// Real client files are read on demand and never copied anywhere else.
+// Source library: reads every file in one folder of a store and keeps the
+// values and reading reports in memory for a short time only (maxAgeMs), then
+// reads the folder again. Nothing is copied anywhere else.
 import { readSource } from "./reader.js";
 
 export class SourceLibrary {
-  constructor(store, folder) { this.store = store; this.folder = folder; this.state = null; this.reading = null; }
+  constructor(store, folder, { maxAgeMs = 2 * 60 * 1000 } = {}) { this.store = store; this.folder = folder; this.maxAgeMs = maxAgeMs; this.state = null; this.reading = null; }
 
   async load({ force = false } = {}) {
-    if (this.state && !force) return this.state;
+    const fresh = this.state && Date.now() - Date.parse(this.state.readAt) < this.maxAgeMs;
+    if (fresh && !force) return this.state;
     if (this.reading) return this.reading;
     this.reading = (async () => {
       const files = (await this.store.list(this.folder)).filter((f) => !f.isFolder);
@@ -29,6 +30,7 @@ export class SourceLibrary {
     return this.reading;
   }
 
+  forget() { this.state = null; }
   async reports() { return (await this.load()).reports; }
   async values() { return (await this.load()).values; }
 }

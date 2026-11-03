@@ -227,3 +227,18 @@ Object.assign(evaluators, {
     return bad.length ? problem(`Placeholder found in: ${bad.join(", ")}.`) : pass("No placeholders.");
   },
 });
+
+// Every referenced figure is re-read from its file each time the plan is shown.
+BUILT_IN_RULES.push({ id: "B4", type: "sources_unchanged", description: "Every figure still matches its source file", severity: "fail", on: true, source: { file: "built-in" } });
+Object.assign(evaluators, {
+  sources_unchanged(rule, m) {
+    const drift = m._drift;
+    if (!drift) return notRun("The source files haven't been re-read yet.");
+    const refs = (m._plan?.figures?.length || 0) + (m._plan?.lines || []).filter((l) => l.rate?.id).length;
+    if (!refs) return notRun("No figures or rates from source files in the plan yet.");
+    const missing = drift.filter((d) => d.kind === "missing"), changed = drift.filter((d) => d.kind === "changed");
+    if (missing.length) return problem(`Source missing for: ${missing.map((d) => `${d.what} (${d.where})`).join("; ")}.`);
+    if (changed.length) return { status: STATUS.WARN, forceStatus: true, needsTick: true, message: `Changed in the source file since it was added: ${changed.map((d) => `${d.what} was "${d.was}", now "${d.now}" (${d.where})`).join("; ")}. The plan now uses the file's current value.` };
+    return pass(`All ${refs} figures and rates re-read from their files just now and unchanged.`);
+  },
+});
