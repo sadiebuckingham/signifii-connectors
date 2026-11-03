@@ -18,6 +18,12 @@
 - **Microsoft sign-in and OneDrive (Thursday's work, done early).** A second connector address, `/mcp/media-plan-onedrive`, asks for Microsoft sign-in and then uses the person's own OneDrive `Media Plans` folder, with exactly the same code as the demo folder. The sign-in service follows Claude's standard (discovery, automatic registration, PKCE) and stores nothing: each person's Microsoft keys travel sealed inside the token only Claude holds. OneDrive plans have no public web link (we can't and don't serve them); a readable copy is saved next to the plan in OneDrive. `set_up_demo_folder` copies the fictional sample files into a new OneDrive folder for testing. Switched on once `MS_CLIENT_ID` and `MS_CLIENT_SECRET` are in Render (`OAUTH_SECRET` is set).
 - 59 tests (sign-in tested against a pretend Microsoft; a full plan built and saved in a pretend OneDrive).
 
+- Ready to send to prospects: renamed **Signifii Media Planner (demo)**, with a short data note built in (fictional demo data; use files without personal data on OneDrive; nothing kept). **One link per prospect** (`PROSPECT_LINKS`), each switchable off, with last-used shown at `/admin/links`.
+- The server logs at start-up whether Microsoft sign-in is on, and which setting is missing.
+- 60 tests.
+
+**To fix before sending:** Chrome flags `signifii-demos.onrender.com` as a "Dangerous site" (likely because it sends people to a Microsoft sign-in from a shared hosting address). Fix: own domain (e.g. `demos.signifii.com`) on Render, then update `PUBLIC_URL` and add the new return address in the Microsoft app.
+
 **To delete (Sadie):** Render Postgres `signifii-demos-db` (not used) and the old `media-plan-connector` service.
 
 ## Tue 3 Nov 2026 (started Mon evening)

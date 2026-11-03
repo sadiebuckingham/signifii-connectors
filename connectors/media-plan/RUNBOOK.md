@@ -86,7 +86,8 @@ Server on `http://localhost:3000`. Without `CONNECTOR_TOKEN` (and not in product
 | Name | Purpose |
 |---|---|
 | `CONNECTOR` | Which connectors run (`media-plan`) |
-| `CONNECTOR_TOKEN` | Shared secret for the connector link (demo auth) |
+| `CONNECTOR_TOKEN` | Sadie's own connector link token |
+| `PROSPECT_LINKS` | One link per prospect, as JSON: `{"Lauren (Acme)": "<token>"}`. Remove an entry to switch that link off. `/admin/links` shows when each was last used |
 | `PLAN_LINK_TOKEN` | Token in the web plan link. Change it to switch the link off |
 | `ADMIN_PASSWORD` | Admin pages (any username) |
 | `PUBLIC_URL` | Public base URL |

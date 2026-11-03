@@ -18,3 +18,14 @@ test("the OneDrive address asks for sign-in even when the older /mcp/<token> add
     assert.equal((await fetch(`${base}/mcp/media-plan/wrong`, { method: "POST", headers: h, body })).status, 404);
   } finally { srv.close(); }
 });
+
+test("one link per prospect: each works on its own and can be switched off", async () => {
+  const { checkConnectorAuth, linkUse } = await import("../auth/index.js");
+  const run = (token) => { let ok = false, status = null; const res = { status: (s) => ((status = s), { json: () => {} }) }; checkConnectorAuth({ get: () => "" }, res, () => (ok = true), token); return ok || status; };
+  process.env.CONNECTOR_TOKEN = "own"; process.env.PROSPECT_LINKS = JSON.stringify({ "Lauren (Acme)": "lauren-tok" });
+  assert.equal(run("own"), true);
+  assert.equal(run("lauren-tok"), true);
+  assert.equal(linkUse.get("Lauren (Acme)").calls, 1);
+  process.env.PROSPECT_LINKS = "{}";
+  assert.equal(run("lauren-tok"), 404, "switched off");
+});

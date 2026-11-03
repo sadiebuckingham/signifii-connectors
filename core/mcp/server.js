@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { z } from "zod";
-import { checkConnectorAuth, checkAdmin } from "../auth/index.js";
+import { checkConnectorAuth, checkAdmin, connectorLinks, linkUse } from "../auth/index.js";
 import { reportError, attachErrorHandler } from "../observability/sentry.js";
 import { microsoftOAuth } from "../auth/oauth.js";
 
@@ -49,7 +49,7 @@ export function createApp(connectors) {
     const html = readFileSync(path.join(ROOT, "dist", `${c.name}.html`), "utf8");
 
     const buildServer = (req) => {
-      const server = new McpServer({ name: c.title, version: c.version });
+      const server = new McpServer({ name: c.title, version: c.version }, c.instructions ? { instructions: c.instructions } : undefined);
       const reg = {
         appTool: (name, config, handler) => registerAppTool(server, name, { ...config, _meta: { ...(config._meta || {}), ui: { resourceUri: c.view.uri, ...(config._meta?.ui || {}) } } }, handler),
         tool: (name, config, handler) => server.registerTool(name, config, handler),
@@ -104,6 +104,8 @@ export function createApp(connectors) {
   }
 
   app.get("/admin/host-reports", checkAdmin, (_req, res) => res.json(hostReports));
+  // Which links exist and when each was last used (names and counts only).
+  app.get("/admin/links", checkAdmin, (_req, res) => res.json(connectorLinks().map((l) => ({ name: l.name, ...(linkUse.get(l.name) || { lastUsed: null, calls: 0 }) }))));
   attachErrorHandler(app);
   return { app, ctx };
 }

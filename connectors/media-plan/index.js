@@ -129,7 +129,8 @@ const DESC_SUFFIX = " Never pass figures you read yourself: pass references (IDs
 
 export default {
   name: "media-plan",
-  title: "Little Lantern Media Plans",
+  title: "Signifii Media Planner (demo)",
+  instructions: "Demo by Signifii. The demo folder holds a fictional agency (Little Lantern Media) and client (Bramble Bots). Every figure in a plan comes from a file or a calculation in code: never type figures yourself; pass references. If someone uses their own OneDrive folder, ask them to use files without personal data: files are read when needed and nothing is kept by Signifii.",
   version: "0.3.0",
   legacyPaths: ["/mcp"],
   view: { uri: "ui://media-plan/plan-v3.html", csp: { resourceDomains: ["https://fonts.googleapis.com", "https://fonts.gstatic.com"], connectDomains: sentryOrigin() } },
