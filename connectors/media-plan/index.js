@@ -8,6 +8,8 @@ import { FsStore } from "../../core/storage/fs-store.js";
 import { SourceLibrary } from "../../core/sources/library.js";
 import { readingReportsPage } from "../../core/sources/report-html.js";
 import { ensureWorkingCopy, resetWorkingCopy } from "../../core/storage/demo-folder.js";
+import { OneDriveStore, StoreAuthError } from "../../core/storage/onedrive-store.js";
+import { readdir, readFile } from "node:fs/promises";
 import { PlanError } from "./engine.js";
 import { reportError } from "../../core/observability/sentry.js";
 import { createService } from "./service.js";
@@ -66,6 +68,26 @@ ${token && vm.status !== "FINAL" ? `<section class="signoff-box" aria-label="Sig
 <script>${MARKERS}; wireSourceMarkers(document);</script></body></html>`;
 const service = createService({ store, library, publicUrl: process.env.PUBLIC_URL || "", renderFile: planPage });
 
+// Signed in with Microsoft: the same service over that person's OneDrive "Media Plans" folder.
+// Kept briefly per person so their files aren't downloaded on every message; nothing is written on our side.
+const oneDrive = new Map();
+function serviceFor(ctx) {
+  const auth = ctx?.req?.auth;
+  if (!auth) return service;
+  const key = auth.user?.email || auth.msAccessToken.slice(-24);
+  let e = oneDrive.get(key);
+  if (!e) {
+    const s = new OneDriveStore(auth.msAccessToken, { label: "your OneDrive" });
+    e = { store: s, svc: createService({ store: s, library: new SourceLibrary(s, config.folders.sharedData), renderFile: planPage, webLinks: false }) };
+    oneDrive.set(key, e);
+  }
+  e.store.token = auth.msAccessToken; // newest token for this person
+  e.at = Date.now();
+  for (const [k, v] of oneDrive) if (Date.now() - v.at > 10 * 60 * 1000) oneDrive.delete(k);
+  e.svc.oneDrive = true; e.svc.user = auth.user;
+  return e.svc;
+}
+
 // ---------- what Claude reads back after each tool
 function planText(r) {
   const vm = r.vm, s = r.checkRun.summary;
@@ -81,7 +103,7 @@ function planText(r) {
     briefWords(r.plan),
     r.drift?.length ? `Source files re-read just now. Changed or missing since added: ${r.drift.map((d) => `${d.what}: ${d.kind === "missing" ? "source missing" : `was "${d.was}", now "${d.now}"`} (${d.where})`).join("; ")}.` : (r.plan.figures.length ? "Source files re-read just now: every figure still matches its file." : ""),
     `Checks: ${s.pass} pass, ${s.warn} warning, ${s.fail} fail, ${s.notRun} not run, ${s.notChecked} not checked.${issues ? `\n${issues}` : ""}`,
-    `Web link: ${r.link}`,
+    r.link ? `Web link: ${r.link}` : `Saved in the planner's OneDrive: Media Plans/Clients/${r.plan.client}/Plans/${r.plan.id}/ (no public web link).`,
     "Don't restate figures yourself; the plan view shows them with their sources.",
   ].filter(Boolean).join("\n");
 }
@@ -94,7 +116,7 @@ function briefWords(plan) {
 const view = (r) => ({ vm: { ...r.vm, checkRun: r.checkRun && { ...r.checkRun, rulesSnapshot: undefined } }, planId: r.plan.id, link: r.link });
 const ok = (r, withView = true) => ({ content: [{ type: "text", text: planText(r) }], ...(withView ? { structuredContent: view(r) } : { structuredContent: { planId: r.plan.id, version: r.plan.version, checks: r.checkRun.summary } }) });
 const err = (e) => {
-  if (e instanceof PlanError) return { isError: true, content: [{ type: "text", text: e.message }] };
+  if (e instanceof PlanError || e instanceof StoreAuthError) return { isError: true, content: [{ type: "text", text: e.message }] };
   reportError(e, { where: "media-plan tool" });
   return { isError: true, content: [{ type: "text", text: `Something went wrong on the server: ${e.message}` }] };
 };
@@ -112,10 +134,35 @@ export default {
   legacyPaths: ["/mcp"],
   view: { uri: "ui://media-plan/plan-v3.html", csp: { resourceDomains: ["https://fonts.googleapis.com", "https://fonts.gstatic.com"], connectDomains: sentryOrigin() } },
 
-  tools(reg) {
+  signIn: true, // also served at /mcp/media-plan-onedrive behind Microsoft sign-in, when configured
+
+  tools(reg, ctx) {
     const { z } = reg;
+    const S = serviceFor(ctx);
     const planId = z.string().describe("Plan ID from start_plan or list_clients");
     const money = { amount_gbp: z.number().optional().describe("Amount in pounds, as the planner said it"), share_pct: z.number().optional().describe("Percentage the planner asked for") };
+
+    // ---- OneDrive only: set up the folder with the fictional sample files
+    if (S.oneDrive) {
+      reg.tool("set_up_demo_folder", {
+        title: "Set up the demo folder in my OneDrive",
+        description: "Copy the fictional sample files (Shared data, Rules, Clients/Bramble Bots) into a new 'Media Plans' folder in the signed-in person's OneDrive, so they can try the connector on their own storage. Only if they ask, and only when that folder doesn't exist yet.",
+        inputSchema: {},
+      }, guard(async () => {
+        if (await S.store.exists("")) return { isError: true, content: [{ type: "text", text: "There's already a 'Media Plans' folder in this OneDrive, so nothing was copied." }] };
+        const copied = [];
+        async function walk(rel) {
+          for (const e of await readdir(path.join(TEMPLATE, rel), { withFileTypes: true })) {
+            const r = rel ? `${rel}/${e.name}` : e.name;
+            if (e.name.startsWith(".")) continue;
+            if (e.isDirectory()) await walk(r); else { await S.store.write(r, await readFile(path.join(TEMPLATE, r))); copied.push(r); }
+          }
+        }
+        await walk("");
+        S.library.forget();
+        return { content: [{ type: "text", text: `Created "Media Plans" in your OneDrive with ${copied.length} fictional sample files:\n${copied.map((c) => `- ${c}`).join("\n")}\nPlans and decisions you make will be saved there.` }] };
+      }));
+    }
 
     // ---- finding things
     reg.tool("list_clients", {
@@ -123,7 +170,8 @@ export default {
       description: "List the agency's clients (folders under Media Plans/Clients), their briefs and their saved plans.",
       inputSchema: {},
     }, guard(async () => {
-      const cs = await service.listClients();
+      const cs = await S.listClients();
+      if (!cs.length && S.oneDrive) return { content: [{ type: "text", text: `Signed in${S.user?.email ? ` as ${S.user.email}` : ""}, but there's no "Media Plans" folder with clients in this OneDrive yet. It needs folders "Shared data", "Rules" and "Clients/<client>/Briefs". If they want to try it with the fictional sample files, use set_up_demo_folder.` }], structuredContent: { clients: [] } };
       return { content: [{ type: "text", text: cs.map((c) => `${c.client}: briefs ${c.briefs.map((b) => `"${b}"`).join(", ") || "none"}; plans ${c.plans.map((p) => `${p.id} (v${p.version})`).join(", ") || "none"}`).join("\n") || "No clients." }], structuredContent: { clients: cs } };
     }));
 
@@ -132,7 +180,7 @@ export default {
       description: "List the files in the Shared data folder and how each was read (read / read with warnings / couldn't read / refused), with what needs checking. reread=true re-reads every file from scratch.",
       inputSchema: { reread: z.boolean().optional() },
     }, guard(async ({ reread }) => {
-      const st = await library.load({ force: Boolean(reread) });
+      const st = await S.library.load({ force: Boolean(reread) });
       const text = st.reports.map((r) => `- ${r.file}: ${r.status.toUpperCase()}. ${r.summary}${(r.checkThese || []).length ? ` Check: ${r.checkThese.map((g) => `${g.count}× ${g.text.split(":")[0]}`).join("; ")}` : ""}`).join("\n");
       return { content: [{ type: "text", text: `Shared data, read ${st.readAt}:\n${text}` }], structuredContent: { readAt: st.readAt, reports: st.reports.map(({ sheets, ...r }) => r) } };
     }));
@@ -142,7 +190,7 @@ export default {
       description: "Rate card lines from the Shared data folder, each with rate IDs to pass to add_channel, the buying unit, notes that change meaning (VAT, commission, uplifts, unconfirmed), and min spend. Hidden rates are left out unless include_hidden=true (only if the planner asks).",
       inputSchema: { search: z.string().optional().describe("Filter, e.g. 'Pip', 'online video', 'Sprout'"), include_hidden: z.boolean().optional() },
     }, guard(async (a) => {
-      const rows = await service.rates(a);
+      const rows = await S.rates(a);
       const text = rows.map((r) => `- ${r.entity} [${r.audienceBasis || "no audience basis"}] ${r.unit || ""}: ${r.rates.map((x) => `${x.metric} ${x.original}${x.hidden ? " (HIDDEN)" : ""} → rate_id "${x.id}"`).join("; ")}${r.minSpend ? `; min spend ${r.minSpend.original}` : ""}${r.notes.length ? `\n    notes: ${r.notes.join(" | ")}` : ""}`).join("\n");
       return { content: [{ type: "text", text: text || "No rates found." }], structuredContent: { rates: rows } };
     }));
@@ -152,7 +200,7 @@ export default {
       description: "Reach/audience figures from the Shared data folder for one age band (e.g. '4-6', '7-9', '4-9') or 'parents'. Returns exact-band figures with IDs for add_audience_figure. If no source has that exact band, it says so plainly (e.g. 'reports 4-9 only. It can't be split to 4-6') and lists wider bands, which may only be used with the planner's agreement. Never estimate, split or average a band yourself.",
       inputSchema: { band: z.string(), search: z.string().optional().describe("Optional filter: channel, file or metric words") },
     }, guard(async (a) => {
-      const q = await service.audience(a);
+      const q = await S.audience(a);
       const rows = q.rows.slice(0, 25).map((r) => `- ${r.entity || ""} · ${r.metric}${r.unit ? ` (${r.unit})` : ""} · ${r.audience} · ${r.period || "period not stated"}: ${r.original} [${r.match}] → value_id "${r.id}"${r.notes.length ? `\n    notes: ${r.notes.join(" | ")}` : ""}`).join("\n");
       const head = q.exactCount ? `${q.exactCount} figure(s) report exactly ${q.band}.` : `No source reports exactly ${q.band}.`;
       return { content: [{ type: "text", text: [head, ...q.messages, rows, q.total > 25 ? `(${q.total - 25} more; narrow with search)` : ""].filter(Boolean).join("\n") }], structuredContent: q };
@@ -163,24 +211,24 @@ export default {
       title: "Start a media plan",
       description: "Start a new media plan for a client from the brief in its Briefs folder. Budget, dates and other details are read from the brief by the connector; anything not found is listed so you can ask the planner (then use set_brief_detail). Shows the plan in the agency's fixed template." + DESC_SUFFIX,
       inputSchema: { client: z.string().describe("Client name, e.g. 'Bramble Bots'"), brief_file: z.string().optional().describe("Only if the client has several briefs") },
-    }, guard(async (a) => ok(await service.startPlan(a))));
+    }, guard(async (a) => ok(await S.startPlan(a))));
 
     reg.appTool("open_plan", {
       title: "Open media plan",
       description: "Show a media plan (latest version) in the agency's fixed template, with its sign-off checks. Use after a batch of changes so the planner sees the result. Accepts a plan ID or a client name (opens that client's latest plan).",
       inputSchema: { plan: z.string().describe("Plan ID or client name") },
-    }, guard(async ({ plan }) => ok(await service.open(plan))));
+    }, guard(async ({ plan }) => ok(await S.open(plan))));
 
     reg.appTool("get_plan_view", {
       title: "Refresh plan view", description: "Used by the plan view to refresh itself.",
       inputSchema: { plan_id: planId }, _meta: { ui: { visibility: ["app"] } },
-    }, guard(async ({ plan_id }) => ok(await service.open(plan_id))));
+    }, guard(async ({ plan_id }) => ok(await S.open(plan_id))));
 
     // ---- changes (each saves a version and reruns the checks)
     const change = (name, title, description, schema, op, { show = false } = {}) => {
       const register = show ? reg.appTool : reg.tool;
       register(name, { title, description: description + DESC_SUFFIX, inputSchema: { plan_id: planId, ...schema } },
-        guard(async ({ plan_id, ...args }) => ok(await service.apply(plan_id, op, args), show)));
+        guard(async ({ plan_id, ...args }) => ok(await S.apply(plan_id, op, args), show)));
     };
 
     change("set_brief_detail", "Set a brief detail", "Record a brief detail the brief didn't state clearly, exactly as the planner gave it in chat (it's shown as 'given by the planner'). key: budget (pounds), window ([start, end] as YYYY-MM-DD), approvalBy (YYYY-MM-DD), client, campaign, objective, audience, contact.",
@@ -205,14 +253,14 @@ export default {
       title: "Save an agreed decision",
       description: "Save a decision the planner has just agreed in chat as a rule in the agency's folder (Rules/decisions.xlsx), so it's applied automatically from now on, in every plan, and doesn't depend on anyone remembering it. Only after the planner clearly agrees, with their name. Types: band_substitute (when an age band isn't reported, use a named wider band, always labelled as itself, e.g. applies_to '4-6', use '4-9'); audience_alias (treat a source's audience label as one of our audiences, e.g. applies_to 'HWC (Housewives w/ children)', use 'parents'). Never use it to change a figure.",
       inputSchema: { type: z.enum(["band_substitute", "audience_alias"]), applies_to: z.string(), use: z.string(), agreed_by: z.string(), why: z.string().optional() },
-    }, guard(async (a) => { const r = await service.recordDecision(a); return { content: [{ type: "text", text: r.message }], structuredContent: { decision: r.decision } }; }));
+    }, guard(async (a) => { const r = await S.recordDecision(a); return { content: [{ type: "text", text: r.message }], structuredContent: { decision: r.decision } }; }));
 
     reg.tool("list_decisions", {
       title: "List agreed decisions", annotations: { readOnlyHint: true },
       description: "List the decisions saved in the agency's Rules/decisions.xlsx: what each covers, who agreed it and when, and whether it's switched on.",
       inputSchema: {},
     }, guard(async () => {
-      const { decisions, problems } = await service.listDecisions();
+      const { decisions, problems } = await S.listDecisions();
       const text = decisions.length ? decisions.map((d) => `- ${d.id} [${d.usable ? "ON" : "OFF"}] ${d.typeText}: ${d.appliesTo} → ${d.use} (agreed by ${d.agreedBy || "?"} on ${d.date || "?"})${d.why ? ` · ${d.why}` : ""}`).join("\n") : "No decisions saved yet.";
       return { content: [{ type: "text", text: text + (problems.length ? `\nNot used: ${problems.join(" ")}` : "") }], structuredContent: { decisions, problems } };
     }));
@@ -222,7 +270,7 @@ export default {
       description: "Compare the current plan with 2-3 alternative splits side by side, without changing the plan. Each scenario lists allocations ({channel, amount_gbp | share_pct}) and/or moves ({from, to, amount_gbp | share_pct, basis}). Everything is calculated in code, including checks." + DESC_SUFFIX,
       inputSchema: { plan_id: planId, scenarios: z.array(z.object({ name: z.string(), allocations: z.array(z.object({ channel: z.string(), ...money })).optional(), moves: z.array(z.object({ from: z.string(), to: z.string(), ...money, basis: z.enum(["of_total_budget", "of_from_line"]).optional() })).optional() })).min(1).max(3) },
     }, guard(async ({ plan_id, scenarios }) => {
-      const rows = await service.compare(plan_id, scenarios);
+      const rows = await S.compare(plan_id, scenarios);
       const channels = [...new Set(rows.flatMap((r) => r.lines.map((l) => l.channel)))];
       const head = `| Channel | ${rows.map((r) => r.name).join(" | ")} |\n|---|${rows.map(() => "---").join("|")}|`;
       const body = channels.map((c) => `| ${c} | ${rows.map((r) => { const l = r.lines.find((x) => x.channel === c); return l ? `${l.budget} (${l.share}) · ${l.delivery}` : "–"; }).join(" | ")} |`).join("\n");
@@ -234,20 +282,20 @@ export default {
       title: "Run sign-off checks", annotations: { readOnlyHint: true },
       description: "Run all sign-off checks on the plan now and list each result: pass, warning (needs a planner tick), fail, not run yet (data missing) or not checked (unknown rule).",
       inputSchema: { plan_id: planId },
-    }, guard(async ({ plan_id }) => ok(await service.open(plan_id), false)));
+    }, guard(async ({ plan_id }) => ok(await S.open(plan_id), false)));
 
     reg.tool("tick_warning", {
       title: "Tick a warning",
       description: "Record that a named person has reviewed a warning (e.g. the under-13 targeting check). Only when the planner says so, with their name. A tick lapses if the warning's wording changes.",
       inputSchema: { plan_id: planId, rule_id: z.string(), name: z.string() },
-    }, guard(async ({ plan_id, ...a }) => ok(await service.tick(plan_id, a), false)));
+    }, guard(async ({ plan_id, ...a }) => ok(await S.tick(plan_id, a), false)));
 
     reg.tool("plan_versions", {
       title: "Plan versions", annotations: { readOnlyHint: true },
       description: "List a plan's saved versions with what changed in each.",
       inputSchema: { plan_id: planId },
     }, guard(async ({ plan_id }) => {
-      const vs = await service.versions(plan_id);
+      const vs = await S.versions(plan_id);
       return { content: [{ type: "text", text: vs.map((v) => `v${v.version} ${v.savedAt.slice(0, 16).replace("T", " ")}: ${v.note}`).join("\n") }], structuredContent: { versions: vs.map(({ file, ...v }) => v) } };
     }));
 
@@ -255,13 +303,17 @@ export default {
       title: "Restore a version",
       description: "Restore an earlier version of a plan. It's saved as a new version; nothing is lost.",
       inputSchema: { plan_id: planId, version: z.number() },
-    }, guard(async ({ plan_id, version }) => ok(await service.restore(plan_id, version), false)));
+    }, guard(async ({ plan_id, version }) => ok(await S.restore(plan_id, version), false)));
 
     reg.tool("get_plan_link", {
       title: "Get web link", annotations: { readOnlyHint: true },
       description: "The plan's read-only web link (same template), for people who don't use Claude.",
       inputSchema: { plan_id: planId },
-    }, guard(async ({ plan_id }) => { const p = await service.getPlan(plan_id); return { content: [{ type: "text", text: service.link(p) }], structuredContent: { link: service.link(p) } }; }));
+    }, guard(async ({ plan_id }) => {
+      const p = await S.getPlan(plan_id);
+      if (S.oneDrive) return { content: [{ type: "text", text: `This plan is in the planner's OneDrive, so there's no public web link (we don't keep a copy). A readable copy is saved next to it: Media Plans/Clients/${p.client}/Plans/${p.id}/. Open it from OneDrive, or share that file from OneDrive.` }] };
+      return { content: [{ type: "text", text: S.link(p) }], structuredContent: { link: S.link(p) } };
+    }));
   },
 
   routes(app, ctx) {

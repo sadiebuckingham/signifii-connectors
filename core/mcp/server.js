@@ -12,6 +12,7 @@ import { registerAppTool, registerAppResource, RESOURCE_MIME_TYPE } from "@model
 import { z } from "zod";
 import { checkConnectorAuth, checkAdmin } from "../auth/index.js";
 import { reportError, attachErrorHandler } from "../observability/sentry.js";
+import { microsoftOAuth } from "../auth/oauth.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -20,7 +21,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
  *   name, title, version
  *   view: { uri, csp }                      its ui:// resource (built into dist/<name>.html)
  *   setup(ctx) -> Promise<void>             one-time setup (stores, libraries)
- *   tools(reg)                              registers tools via reg.appTool / reg.tool
+ *   tools(reg, ctx)                         registers tools; ctx.req is the request (ctx.req.auth when signed in)
+ *   signIn: true                            also serve /mcp/<name>-onedrive behind Microsoft sign-in
  *   routes(app, ctx)                        optional web routes (web view, admin)
  */
 export function createApp(connectors) {
@@ -32,17 +34,25 @@ export function createApp(connectors) {
   const hostReports = [];
   const ctx = { root: ROOT, publicUrl: process.env.PUBLIC_URL || "", checkAdmin, hostReports };
 
+  // Microsoft sign-in: switched on only when its settings are present.
+  const E = process.env;
+  const oauth = E.MS_CLIENT_ID && E.MS_CLIENT_SECRET && E.OAUTH_SECRET && E.PUBLIC_URL
+    ? microsoftOAuth({ publicUrl: E.PUBLIC_URL, secret: E.OAUTH_SECRET, clientId: E.MS_CLIENT_ID, clientSecret: E.MS_CLIENT_SECRET, tenant: E.MS_TENANT || "common" })
+    : null;
+  if (oauth) app.use(oauth.router);
+  ctx.signInEnabled = Boolean(oauth);
+
   for (const c of connectors) {
     const html = readFileSync(path.join(ROOT, "dist", `${c.name}.html`), "utf8");
 
-    const buildServer = () => {
+    const buildServer = (req) => {
       const server = new McpServer({ name: c.title, version: c.version });
       const reg = {
         appTool: (name, config, handler) => registerAppTool(server, name, { ...config, _meta: { ...(config._meta || {}), ui: { resourceUri: c.view.uri, ...(config._meta?.ui || {}) } } }, handler),
         tool: (name, config, handler) => server.registerTool(name, config, handler),
         z,
       };
-      c.tools(reg, ctx);
+      c.tools(reg, { ...ctx, req });
       // App-only diagnostics: how the host displays the view (never shown to the model).
       reg.appTool("report_host_context", {
         title: "Report host context", description: "Internal diagnostics sent by the view. Not for the model.",
@@ -61,7 +71,7 @@ export function createApp(connectors) {
     };
 
     const handle = async (req, res) => {
-      const server = buildServer();
+      const server = buildServer(req);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       res.on("close", () => { transport.close(); server.close(); });
       try {
@@ -73,6 +83,12 @@ export function createApp(connectors) {
       }
     };
     const notAllowed = (_req, res) => res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed." }, id: null });
+    // The sign-in address goes first, so the older /mcp/<token> address can't catch it.
+    if (c.signIn && oauth) {
+      const p = `/mcp/${c.name}-onedrive`;
+      app.post(p, oauth.protect(p), handle);
+      app.get(p, notAllowed); app.delete(p, notAllowed);
+    }
     const paths = [`/mcp/${c.name}`];
     if (c.legacyPaths) paths.push(...c.legacyPaths); // keeps an already-added connector link working
     for (const p of paths) {

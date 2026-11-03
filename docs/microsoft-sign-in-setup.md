@@ -56,6 +56,18 @@ Render → **signifii-demos** → **Environment** → add:
 
 Save. Render restarts the service. Then tell me it's done.
 
+(`OAUTH_SECRET`, the key that seals sign-in tokens, is already set. Don't change it: everyone would have to sign in again.)
+
+## 7. Add the OneDrive version of the connector in Claude
+
+This is a second connector, next to the demo one:
+
+1. claude.ai → **Customize** → **Connectors** → **Add custom connector**.
+2. Name `Little Lantern Media Plans (OneDrive)`, URL `https://signifii-demos.onrender.com/mcp/media-plan-onedrive`.
+3. Authentication: **Sign in now** (or "Sign in when needed"), OAuth client: **Register automatically**. Leave client ID and secret empty.
+4. Click **Add**, then **Connect**: Microsoft's sign-in page opens. Sign in as `sadie@signifii.com` and allow access.
+5. In a new chat with that connector on, ask: *"Set up the demo folder in my OneDrive"*. It copies the fictional sample files into a new **Media Plans** folder in your OneDrive. Then *"Start a new media plan for Bramble Bots"*, and check the plan appears under `Media Plans/Clients/Bramble Bots/Plans` in OneDrive.
+
 ## What the other person may see
 
 - A Microsoft screen asking them to allow "Signifii Connectors (demo)" to read and write their files. That's expected.

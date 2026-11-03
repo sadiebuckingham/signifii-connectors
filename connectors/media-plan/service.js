@@ -22,7 +22,7 @@ const OPS = {
 };
 
 // renderFile(vm) -> HTML of the plan as a standalone page, saved next to its versions.
-export function createService({ store, library, publicUrl = "", renderFile = null }) {
+export function createService({ store, library, publicUrl = "", renderFile = null, webLinks = true }) {
   const clientsFolder = config.folders.clients;
   // Plans live in the client's own folder: Clients/<client>/Plans/<plan id>/v0001.json ...
   const docs = new FolderDocStore(store, {
@@ -45,7 +45,8 @@ export function createService({ store, library, publicUrl = "", renderFile = nul
     const values = fresh ? (await library.load({ force: true })).values : await library.values();
     return { values, valuesById: new Map(values.map((v) => [E.valueId(v), v])), decisions: (await decisions()).decisions };
   }
-  const link = (plan) => (publicUrl ? `${publicUrl}/p/${plan.linkToken}` : `/p/${plan.linkToken}`);
+  // No public web link for plans in someone's own OneDrive: we can't (and don't) serve them.
+  const link = (plan) => (!webLinks ? null : publicUrl ? `${publicUrl}/p/${plan.linkToken}` : `/p/${plan.linkToken}`);
 
   // Show a plan: go back to the folder, re-read every referenced figure, run every check.
   async function present(saved, message) {
@@ -226,6 +227,6 @@ export function createService({ store, library, publicUrl = "", renderFile = nul
       return { decision: saved, message: `Saved as ${describeDecision(saved)} in ${decisionsFile}: ${t.label.replace(/^\d+ - /, "")}: ${saved.appliesTo} → ${saved.use}. It applies from now on, in every plan, until someone switches it off in that sheet.` };
     },
     async byToken(token) { return (await docs.list()).find((p) => p.linkToken === token) || null; },
-    present, link,
+    present, link, library, store,
   };
 }

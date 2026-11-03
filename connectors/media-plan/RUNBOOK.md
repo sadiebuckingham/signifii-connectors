@@ -91,13 +91,15 @@ Server on `http://localhost:3000`. Without `CONNECTOR_TOKEN` (and not in product
 | `ADMIN_PASSWORD` | Admin pages (any username) |
 | `PUBLIC_URL` | Public base URL |
 | `MEDIA_PLANS_ROOT` | Optional: another "Media Plans" folder on disk |
+| `OAUTH_SECRET` | Key that seals sign-in tokens (set; changing it signs everyone out) |
+| `MS_CLIENT_ID`, `MS_CLIENT_SECRET` | Microsoft app registration (switches on the OneDrive address) |
 | `DATA_DIR` | Where the demo client folder's working copy lives (default `.data`) |
 
 ## Auth
 
 Now (fictional data only): one shared secret. Add the connector in Claude as `https://signifii-demos.onrender.com/mcp/media-plan/<CONNECTOR_TOKEN>` with no sign-in (works on every plan), or as `…/mcp/media-plan` with header `Authorization: Bearer <token>` where the organisation has request headers (beta). Wrong path token → 404; missing/wrong header → 401.
 
-Thursday: optional Microsoft sign-in for OneDrive only; the demo folders keep working with no login. App registration under `sadie@signifii.com` (Microsoft 365), walked through on Tuesday once the sign-in return address exists.
+OneDrive (built 3 Nov): `/mcp/media-plan-onedrive` asks for Microsoft sign-in (standard MCP OAuth: discovery, dynamic registration, PKCE; stateless, nothing stored) and then uses the person's own OneDrive `Media Plans` folder. The demo address keeps working with no login. Code: `core/auth/oauth.js`, `core/storage/onedrive-store.js`. App registration under `sadie@signifii.com` (Microsoft 365), walked through on Tuesday once the sign-in return address exists.
 
 ## Deploy and roll back
 
